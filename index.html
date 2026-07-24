@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#2255aa">
+<link rel="manifest" href="manifest.webmanifest">
 <title>사진대지 자동생성</title>
 <style>
   *{box-sizing:border-box}
@@ -20,8 +22,8 @@
   .page{background:#fff;max-width:800px;margin:0 auto 14px;padding:34px 30px;box-shadow:0 1px 5px rgba(0,0,0,.15)}
   .title{text-align:center;font-size:28px;font-weight:700;letter-spacing:14px;margin:0 0 10px}
   .site{font-size:14px;margin:0 0 12px}
-  .ph{border:1px solid #333;height:330px;text-align:center;margin-bottom:8px;overflow:hidden;position:relative}
-  .ph img{max-width:100%;max-height:328px}
+  .ph{border:1px solid #333;height:330px;margin-bottom:8px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center}
+  .ph img{max-width:100%;max-height:328px;display:block;margin:auto}
   .del{position:absolute;top:4px;right:4px;background:#d33;color:#fff;border:0;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px}
   table{width:100%;border-collapse:collapse;margin-bottom:18px}
   td,th{border:1px solid #333;font-size:13px;padding:5px 8px;height:30px}
@@ -53,26 +55,24 @@
     <div><label>위치 (새 사진 기본값)</label><input id="h_loc" placeholder="예: 구리갈매A-2BL 현장내"></div>
     <div><label>내용 (새 사진 기본값)</label><input id="h_memo" placeholder="예: 가배수로 정리"></div>
   </div>
-  <div class="tip">휴대폰: 촬영 → [사진 추가]로 여러 장 선택 → 위치/내용 확인 → [인쇄/PDF저장]. 기본값을 먼저 입력해두면 사진마다 자동으로 채워집니다.</div>
+  <div class="tip">갤러리에서 사진 선택 → 공유 → [사진대지] 앱 선택하면 사진이 자동으로 들어옵니다. (최초 1회: 이 페이지를 크롬에서 열고 "홈 화면에 추가" 필요)</div>
 </div>
 
 <div id="pages"></div>
-<div class="empty" id="empty">아직 사진이 없습니다. [사진 추가]를 눌러 시작하세요.</div>
+<div class="empty" id="empty">아직 사진이 없습니다. [사진 추가]를 누르거나, 갤러리에서 공유하세요.</div>
 
 <script>
 const items=[]; // {src, loc, memo, date, bigo}
 const PER=2;
 const $=id=>document.getElementById(id);
-function add(files){
-  [...files].forEach(f=>{
+function addBlob(b){
+  return new Promise(res=>{
     const r=new FileReader();
-    r.onload=e=>{
-      items.push({src:e.target.result,loc:$("h_loc").value,memo:$("h_memo").value,date:$("h_date").value,bigo:""});
-      draw();
-    };
-    r.readAsDataURL(f);
+    r.onload=e=>{items.push({src:e.target.result,loc:$("h_loc").value,memo:$("h_memo").value,date:$("h_date").value,bigo:""});res();};
+    r.readAsDataURL(b);
   });
 }
+async function add(files){for(const f of [...files])await addBlob(f);draw();}
 function del(i){items.splice(i,1);draw();}
 function set(i,k,v){items[i][k]=v;}
 function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
@@ -96,7 +96,26 @@ function draw(){
   }
   $("pages").innerHTML=html;
 }
-window.onload=()=>{if(!$("h_date").value)$("h_date").value=new Date().toISOString().slice(0,10);draw();};
+// 공유로 들어온 사진 불러오기 (서비스워커가 캐시에 저장해 둠)
+async function loadShared(){
+  if(!("caches" in window))return;
+  const cache=await caches.open("shared");
+  const c=await cache.match("count");
+  if(!c)return;
+  const n=+await c.text();
+  for(let i=0;i<n;i++){
+    const r=await cache.match("photo"+i);
+    if(r)await addBlob(await r.blob());
+  }
+  await caches.delete("shared");
+  draw();
+}
+window.onload=async()=>{
+  if(!$("h_date").value)$("h_date").value=new Date().toISOString().slice(0,10);
+  if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");
+  await loadShared();
+  draw();
+};
 </script>
 </body>
 </html>
