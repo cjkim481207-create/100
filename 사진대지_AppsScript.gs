@@ -32,36 +32,32 @@ function findTemplate() {
 }
 
 function doGet(e) {
-  const p = (e && e.parameter) || {};
-  if (p.run) {
-    try {
-      const r = generate(p);
-      return page('✅ 완료 (' + r.count + '장, ' + r.pages + '페이지)<br><br>' +
-        '<a class=b href="' + r.xlsx + '">📄 XLSX 열기</a> <a class=b href="' + r.pdf + '">📕 PDF 열기</a>' +
-        '<br><br><a href="?">← 처음으로</a>');
-    } catch (err) { return page('⚠️ ' + err.message + '<br><br><a href="?">← 처음으로</a>'); }
-  }
   const today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
-  return page(
-    '<form>' +
-    '<label>위치</label><input name=loc value="' + NAMES.defaultLoc + '">' +
-    '<label>내용</label><input name=memo placeholder="예: 가배수로 정리">' +
-    '<label>일자</label><input type=date name=date value="' + today + '">' +
-    '<input type=hidden name=run value=1>' +
-    '<button>사진대지 생성 (xlsx + PDF)</button></form>' +
-    '<p class=t>먼저 갤러리에서 사진 선택 → 공유 → 드라이브 → "' + NAMES.inFolder + '" 폴더에 저장한 뒤 누르세요.</p>');
-}
-
-function page(body) {
-  return HtmlService.createHtmlOutput(
+  const html =
     '<meta name=viewport content="width=device-width,initial-scale=1">' +
     '<style>body{font-family:sans-serif;max-width:420px;margin:24px auto;padding:0 16px}' +
     'label{display:block;font-size:13px;color:#555;margin:10px 0 2px}' +
     'input{width:100%;padding:10px;font-size:16px;box-sizing:border-box}' +
     'button{width:100%;margin-top:16px;padding:14px;font-size:16px;background:#25a;color:#fff;border:0;border-radius:8px}' +
+    'button:disabled{background:#9ab}' +
     '.b{display:inline-block;margin:4px;padding:12px 18px;background:#25a;color:#fff;border-radius:8px;text-decoration:none}' +
-    '.t{font-size:13px;color:#777}</style>' +
-    '<h2>📷 사진대지 자동생성</h2>' + body);
+    '.t{font-size:13px;color:#777}#msg{margin-top:16px;font-size:16px;line-height:1.6}</style>' +
+    '<h2>📷 사진대지 자동생성</h2>' +
+    '<label>위치</label><input id=loc value="' + NAMES.defaultLoc + '">' +
+    '<label>내용</label><input id=memo placeholder="예: 가배수로 정리">' +
+    '<label>일자</label><input type=date id=date value="' + today + '">' +
+    '<button id=btn onclick="go()">사진대지 생성 (xlsx + PDF)</button>' +
+    '<div id=msg></div>' +
+    '<p class=t>먼저 갤러리에서 사진 선택 → 공유 → 드라이브 → "' + NAMES.inFolder + '" 폴더에 저장한 뒤 누르세요.</p>' +
+    '<script>' +
+    'function v(id){return document.getElementById(id).value;}' +
+    'function reset(){var b=document.getElementById("btn");b.disabled=false;b.textContent="사진대지 생성 (xlsx + PDF)";}' +
+    'function ok(r){document.getElementById("msg").innerHTML="✅ 완료 ("+r.count+"장, "+r.pages+"페이지)<br><br><a class=b target=_blank href=\\""+r.xlsx+"\\">📄 XLSX 열기</a> <a class=b target=_blank href=\\""+r.pdf+"\\">📕 PDF 열기</a>";reset();}' +
+    'function err(e){document.getElementById("msg").innerHTML="⚠️ "+e.message;reset();}' +
+    'function go(){var b=document.getElementById("btn");b.disabled=true;b.textContent="생성 중… 잠시만요 (최대 30초)";document.getElementById("msg").textContent="";' +
+    'google.script.run.withSuccessHandler(ok).withFailureHandler(err).generate({loc:v("loc"),memo:v("memo"),date:v("date")});}' +
+    '<\/script>';
+  return HtmlService.createHtmlOutput(html).addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function generate(p) {
