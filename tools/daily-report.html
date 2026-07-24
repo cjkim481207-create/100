@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>공사일보 작성기</title>
+<style>
+  :root{
+    --ink:#1a2332; --sub:#5a6a80; --line:#d8dfe8; --bg:#f2f5f9;
+    --accent:#1558c4; --card:#fff; --danger:#c0392b;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:'Malgun Gothic','맑은 고딕',-apple-system,sans-serif; background:var(--bg); color:var(--ink); font-size:14px;}
+  header{background:var(--ink); color:#fff; padding:12px 20px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; position:sticky; top:0; z-index:50;}
+  header h1{font-size:17px; font-weight:700; margin-right:auto;}
+  header h1 small{font-weight:400; opacity:.6; font-size:12px; margin-left:8px;}
+  .btn{border:0; border-radius:6px; padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; background:#39465c; color:#fff;}
+  .btn:hover{filter:brightness(1.15);}
+  .btn.primary{background:var(--accent);}
+  .btn.ghost{background:transparent; border:1px solid #55637c;}
+
+  main{max-width:900px; margin:18px auto 60px; display:flex; flex-direction:column; gap:14px; padding:0 12px;}
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px;}
+  .panel h2{font-size:14px; color:var(--sub); margin-bottom:12px; font-weight:700; display:flex; align-items:center; gap:8px;}
+  .panel h2 .add{margin-left:auto; border:1px solid var(--line); background:#fff; color:var(--accent); border-radius:6px; padding:4px 12px; font-size:12px; font-weight:700; cursor:pointer;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px 14px;}
+  .field label{display:block; font-size:12px; color:var(--sub); margin-bottom:4px; font-weight:600;}
+  .field input, .field select, .field textarea{width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px; font-family:inherit;}
+  .field textarea{resize:vertical; min-height:64px; line-height:1.6;}
+  .field input:focus, .field textarea:focus{outline:2px solid var(--accent); outline-offset:-1px;}
+
+  table.edit{width:100%; border-collapse:collapse;}
+  table.edit th{font-size:12px; color:var(--sub); text-align:left; padding:4px 6px; font-weight:600;}
+  table.edit td{padding:3px 4px;}
+  table.edit input{width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; font-size:13px; font-family:inherit;}
+  table.edit .rm{border:0; background:none; color:var(--danger); cursor:pointer; font-size:14px; padding:4px 6px;}
+  .sum{font-size:12px; color:var(--sub); text-align:right; margin-top:6px;}
+
+  /* ── 인쇄 양식 ── */
+  #print-area{display:none;}
+  .sheet{width:210mm; min-height:297mm; background:#fff; margin:0 auto; padding:12mm 14mm; font-size:12px;}
+  .sheet .doc-title{text-align:center; font-size:22px; font-weight:800; letter-spacing:10px; padding:4mm 0 5mm;}
+  .sheet table{width:100%; border-collapse:collapse; margin-bottom:4mm;}
+  .sheet th, .sheet td{border:1px solid #000; padding:2.2mm 2.5mm; vertical-align:top;}
+  .sheet th{background:#f0f2f5; font-weight:700; text-align:center;}
+  .sheet .sec{background:#e4e9f0; font-weight:800; text-align:left; letter-spacing:2px;}
+  .sheet td.num{text-align:right;}
+  .sheet td.ctr{text-align:center;}
+  .sheet .memo{min-height:18mm; white-space:pre-wrap; line-height:1.7;}
+  .sign{display:flex; justify-content:flex-end; margin-top:2mm;}
+  .sign table{width:70mm; margin:0;}
+  .sign td{height:14mm;}
+
+  @media print{
+    body{background:#fff;}
+    header, main{display:none !important;}
+    #print-area{display:block !important;}
+    @page{size:A4 portrait; margin:0;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>📋 공사일보 작성기 <small>입력 내용은 이 PC 브라우저에만 저장됩니다</small></h1>
+  <button class="btn ghost" id="btnYesterday">전일 일보 복사</button>
+  <button class="btn ghost" id="btnSave">파일로 저장</button>
+  <button class="btn ghost" id="btnLoad">불러오기</button>
+  <button class="btn primary" id="btnPrint">인쇄 / PDF 저장</button>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>기본 정보</h2>
+    <div class="grid">
+      <div class="field" style="grid-column:span 2"><label>공 사 명</label><input id="fProject"></div>
+      <div class="field"><label>작성일</label><input id="fDate" type="date"></div>
+      <div class="field"><label>날 씨</label>
+        <select id="fWeather"><option>맑음</option><option>구름</option><option>흐림</option><option>비</option><option>눈</option><option>강풍</option></select>
+      </div>
+      <div class="field"><label>최저기온(℃)</label><input id="fTempLo" type="number" step="0.1"></div>
+      <div class="field"><label>최고기온(℃)</label><input id="fTempHi" type="number" step="0.1"></div>
+      <div class="field"><label>공정률-계획(%)</label><input id="fPlan" type="number" step="0.01"></div>
+      <div class="field"><label>공정률-실적(%)</label><input id="fActual" type="number" step="0.01"></div>
+      <div class="field" style="grid-column:span 2"><label>작성자 / 소속</label><input id="fWriter" placeholder="예: 건축팀 홍길동 대리"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>출역 인원 <button class="add" data-add="labor">+ 행 추가</button></h2>
+    <table class="edit" id="tLabor">
+      <thead><tr><th style="width:26%">직 종</th><th style="width:26%">업 체</th><th style="width:14%">금일(명)</th><th style="width:14%">누계(명)</th><th style="width:20%">비 고</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="sum" id="laborSum"></div>
+  </div>
+
+  <div class="panel">
+    <h2>투입 장비 <button class="add" data-add="equip">+ 행 추가</button></h2>
+    <table class="edit" id="tEquip">
+      <thead><tr><th style="width:30%">장비명</th><th style="width:20%">규 격</th><th style="width:14%">대 수</th><th style="width:36%">작업 내용</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>자재 반입 <button class="add" data-add="mat">+ 행 추가</button></h2>
+    <table class="edit" id="tMat">
+      <thead><tr><th style="width:30%">자재명</th><th style="width:20%">규 격</th><th style="width:14%">수 량</th><th style="width:14%">단 위</th><th style="width:22%">비 고</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>작업 사항</h2>
+    <div class="grid" style="grid-template-columns:1fr;">
+      <div class="field"><label>금일 작업 사항</label><textarea id="fToday" placeholder="공종별로 한 줄씩 입력하세요"></textarea></div>
+      <div class="field"><label>명일 작업 계획</label><textarea id="fTomorrow"></textarea></div>
+      <div class="field"><label>안전 관리 사항</label><textarea id="fSafety" placeholder="예: TBM 실시, 고소작업 안전벨트 착용 확인"></textarea></div>
+      <div class="field"><label>특이 사항 / 지시 사항</label><textarea id="fNote"></textarea></div>
+    </div>
+  </div>
+</main>
+
+<div id="print-area"></div>
+<input type="file" id="loadInput" accept=".json" hidden>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => (s??'').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const AUTOSAVE_KEY = 'dailyReport.autosave';
+
+const TABLES = {
+  labor: {sel:'#tLabor tbody', cols:['job','vendor','today','total','note'], num:['today','total']},
+  equip: {sel:'#tEquip tbody', cols:['name','spec','count','work'], num:['count']},
+  mat:   {sel:'#tMat tbody',   cols:['name','spec','qty','unit','note'], num:['qty']},
+};
+
+function addRow(kind, data={}){
+  const t = TABLES[kind];
+  const tr = document.createElement('tr');
+  tr.innerHTML = t.cols.map(c =>
+    `<td><input data-c="${c}" ${t.num.includes(c)?'type="number" step="0.5"':''}></td>`
+  ).join('') + `<td><button class="rm" title="행 삭제">✕</button></td>`;
+  t.cols.forEach(c => { tr.querySelector(`[data-c="${c}"]`).value = data[c] ?? ''; });
+  tr.querySelector('.rm').addEventListener('click', () => { tr.remove(); refreshSums(); scheduleAutosave(); });
+  tr.addEventListener('input', () => { refreshSums(); scheduleAutosave(); });
+  document.querySelector(t.sel).appendChild(tr);
+}
+function readRows(kind){
+  const t = TABLES[kind];
+  return [...document.querySelectorAll(t.sel + ' tr')].map(tr => {
+    const o = {};
+    t.cols.forEach(c => o[c] = tr.querySelector(`[data-c="${c}"]`).value);
+    return o;
+  }).filter(o => Object.values(o).some(v => v !== ''));
+}
+function refreshSums(){
+  const rows = readRows('labor');
+  const today = rows.reduce((s,r)=>s+(+r.today||0),0);
+  const total = rows.reduce((s,r)=>s+(+r.total||0),0);
+  $('#laborSum').textContent = `금일 계 ${today}명 · 누계 ${total}명 (인쇄 시 합계 행 자동 표시)`;
+}
+
+/* ── 데이터 직렬화 ── */
+const FIELDS = ['fProject','fDate','fWeather','fTempLo','fTempHi','fPlan','fActual','fWriter','fToday','fTomorrow','fSafety','fNote'];
+function collect(){
+  const d = {v:1};
+  FIELDS.forEach(id => d[id] = $('#'+id).value);
+  d.labor = readRows('labor'); d.equip = readRows('equip'); d.mat = readRows('mat');
+  return d;
+}
+function restore(d){
+  FIELDS.forEach(id => { if (d[id] !== undefined) $('#'+id).value = d[id]; });
+  Object.keys(TABLES).forEach(k => {
+    document.querySelector(TABLES[k].sel).innerHTML = '';
+    (d[k]||[]).forEach(row => addRow(k, row));
+    if (!(d[k]||[]).length) addRow(k);
+  });
+  refreshSums();
+}
+
+/* ── 자동저장 (localStorage) ── */
+let saveTimer = null;
+function scheduleAutosave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try{ localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(collect())); }catch(e){}
+  }, 400);
+}
+document.addEventListener('input', scheduleAutosave);
+
+/* ── 전일 일보 복사: 날짜만 오늘로, 금일작업→비움, 명일계획→금일로 이동 ── */
+$('#btnYesterday').addEventListener('click', () => {
+  const raw = localStorage.getItem(AUTOSAVE_KEY);
+  if (!raw){ alert('저장된 일보가 없습니다.'); return; }
+  const d = JSON.parse(raw);
+  d.fDate = new Date().toISOString().slice(0,10);
+  d.fToday = d.fTomorrow || '';
+  d.fTomorrow = '';
+  (d.labor||[]).forEach(r => { r.today=''; });
+  restore(d);
+  scheduleAutosave();
+});
+
+/* ── 파일 저장/불러오기 ── */
+$('#btnSave').addEventListener('click', () => {
+  const d = collect();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(d,null,1)], {type:'application/json'}));
+  a.download = `공사일보_${d.fDate||'날짜미정'}.json`;
+  a.click();
+});
+$('#btnLoad').addEventListener('click', () => $('#loadInput').click());
+$('#loadInput').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { try{ restore(JSON.parse(r.result)); scheduleAutosave(); }catch(err){ alert('파일을 읽을 수 없습니다.'); } };
+  r.readAsText(f); e.target.value='';
+});
+
+/* ── 인쇄 양식 ── */
+function buildPrint(){
+  const d = collect();
+  const dayNames = ['일','월','화','수','목','금','토'];
+  const dt = d.fDate ? new Date(d.fDate+'T00:00:00') : null;
+  const dateStr = dt ? `${dt.getFullYear()}년 ${dt.getMonth()+1}월 ${dt.getDate()}일 (${dayNames[dt.getDay()]})` : '';
+  const laborRows = d.labor.map(r=>`<tr><td class="ctr">${esc(r.job)}</td><td class="ctr">${esc(r.vendor)}</td><td class="num">${esc(r.today)}</td><td class="num">${esc(r.total)}</td><td>${esc(r.note)}</td></tr>`).join('');
+  const laborToday = d.labor.reduce((s,r)=>s+(+r.today||0),0);
+  const laborTotal = d.labor.reduce((s,r)=>s+(+r.total||0),0);
+  const equipRows = d.equip.map(r=>`<tr><td class="ctr">${esc(r.name)}</td><td class="ctr">${esc(r.spec)}</td><td class="num">${esc(r.count)}</td><td>${esc(r.work)}</td></tr>`).join('');
+  const matRows = d.mat.map(r=>`<tr><td class="ctr">${esc(r.name)}</td><td class="ctr">${esc(r.spec)}</td><td class="num">${esc(r.qty)}</td><td class="ctr">${esc(r.unit)}</td><td>${esc(r.note)}</td></tr>`).join('');
+
+  $('#print-area').innerHTML = `
+  <div class="sheet">
+    <div class="doc-title">공 사 일 보</div>
+    <table>
+      <tr><th style="width:16%">공 사 명</th><td colspan="3">${esc(d.fProject)}</td></tr>
+      <tr>
+        <th>일 자</th><td style="width:34%">${dateStr}</td>
+        <th style="width:16%">날씨 / 기온</th><td>${esc(d.fWeather)} / 최저 ${esc(d.fTempLo)}℃ · 최고 ${esc(d.fTempHi)}℃</td>
+      </tr>
+      <tr>
+        <th>공 정 률</th><td>계획 ${esc(d.fPlan)}% &nbsp;·&nbsp; 실적 ${esc(d.fActual)}%</td>
+        <th>작 성 자</th><td>${esc(d.fWriter)}</td>
+      </tr>
+    </table>
+
+    <table>
+      <tr><td class="sec" colspan="5">출 역 인 원</td></tr>
+      <tr><th style="width:24%">직 종</th><th style="width:24%">업 체</th><th style="width:13%">금일(명)</th><th style="width:13%">누계(명)</th><th>비 고</th></tr>
+      ${laborRows || '<tr><td colspan="5" class="ctr">-</td></tr>'}
+      ${laborRows ? `<tr><th colspan="2">계</th><td class="num"><b>${laborToday}</b></td><td class="num"><b>${laborTotal}</b></td><td></td></tr>` : ''}
+    </table>
+
+    <table>
+      <tr><td class="sec" colspan="4">투 입 장 비</td></tr>
+      <tr><th style="width:26%">장비명</th><th style="width:20%">규 격</th><th style="width:12%">대 수</th><th>작업 내용</th></tr>
+      ${equipRows || '<tr><td colspan="4" class="ctr">-</td></tr>'}
+    </table>
+
+    <table>
+      <tr><td class="sec" colspan="5">자 재 반 입</td></tr>
+      <tr><th style="width:26%">자재명</th><th style="width:20%">규 격</th><th style="width:12%">수 량</th><th style="width:12%">단 위</th><th>비 고</th></tr>
+      ${matRows || '<tr><td colspan="5" class="ctr">-</td></tr>'}
+    </table>
+
+    <table>
+      <tr><td class="sec">금일 작업 사항</td></tr>
+      <tr><td class="memo">${esc(d.fToday)}</td></tr>
+      <tr><td class="sec">명일 작업 계획</td></tr>
+      <tr><td class="memo">${esc(d.fTomorrow)}</td></tr>
+      <tr><td class="sec">안전 관리 사항</td></tr>
+      <tr><td class="memo">${esc(d.fSafety)}</td></tr>
+      <tr><td class="sec">특이 사항 / 지시 사항</td></tr>
+      <tr><td class="memo">${esc(d.fNote)}</td></tr>
+    </table>
+
+    <div class="sign">
+      <table>
+        <tr><th style="width:33%">담 당</th><th style="width:33%">공사팀장</th><th>소 장</th></tr>
+        <tr><td></td><td></td><td></td></tr>
+      </table>
+    </div>
+  </div>`;
+}
+$('#btnPrint').addEventListener('click', () => { buildPrint(); window.print(); });
+
+/* ── 초기화 ── */
+document.addEventListener('DOMContentLoaded', () => {
+  const raw = localStorage.getItem(AUTOSAVE_KEY);
+  if (raw){
+    try{ restore(JSON.parse(raw)); return; }catch(e){}
+  }
+  $('#fDate').value = new Date().toISOString().slice(0,10);
+  Object.keys(TABLES).forEach(k => { addRow(k); addRow(k); });
+});
+</script>
+</body>
+</html>

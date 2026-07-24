@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>사진대지 자동 생성기</title>
+<style>
+  :root{
+    --ink:#1a2332; --sub:#5a6a80; --line:#d8dfe8; --bg:#f2f5f9;
+    --accent:#1558c4; --accent-ink:#fff; --card:#fff; --danger:#c0392b;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:'Malgun Gothic','맑은 고딕',-apple-system,sans-serif; background:var(--bg); color:var(--ink); font-size:14px;}
+
+  /* ── 상단 툴바 ─────────────────────────── */
+  header{background:var(--ink); color:#fff; padding:12px 20px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; position:sticky; top:0; z-index:50;}
+  header h1{font-size:17px; font-weight:700; margin-right:auto;}
+  header h1 small{font-weight:400; opacity:.6; font-size:12px; margin-left:8px;}
+  .btn{border:0; border-radius:6px; padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; background:#39465c; color:#fff;}
+  .btn:hover{filter:brightness(1.15);}
+  .btn.primary{background:var(--accent); color:var(--accent-ink);}
+  .btn.ghost{background:transparent; border:1px solid #55637c;}
+
+  /* ── 설정 패널 ─────────────────────────── */
+  .panel{max-width:1080px; margin:18px auto 0; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px;}
+  .panel h2{font-size:14px; color:var(--sub); margin-bottom:12px; font-weight:700;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px 14px;}
+  .field label{display:block; font-size:12px; color:var(--sub); margin-bottom:4px; font-weight:600;}
+  .field input, .field select{width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px; font-family:inherit;}
+  .field input:focus{outline:2px solid var(--accent); outline-offset:-1px;}
+
+  /* ── 드롭존 ────────────────────────────── */
+  #dropzone{max-width:1080px; margin:14px auto; border:2px dashed #aab8cc; border-radius:10px; padding:34px 20px; text-align:center; color:var(--sub); background:#fbfcfe; cursor:pointer; transition:.15s;}
+  #dropzone.on{border-color:var(--accent); background:#eaf1fd; color:var(--accent);}
+  #dropzone strong{display:block; font-size:15px; margin-bottom:6px; color:var(--ink);}
+  #dropzone.on strong{color:var(--accent);}
+
+  /* ── 사진 목록 (편집 뷰) ────────────────── */
+  #list{max-width:1080px; margin:0 auto 40px; display:flex; flex-direction:column; gap:10px;}
+  .item{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; display:grid; grid-template-columns:150px 1fr auto; gap:14px; align-items:start;}
+  .item img{width:150px; height:112px; object-fit:cover; border-radius:6px; border:1px solid var(--line);}
+  .item .meta{display:grid; grid-template-columns:1fr 1fr; gap:8px 12px;}
+  .item .meta .wide{grid-column:1/-1;}
+  .item .ctrl{display:flex; flex-direction:column; gap:6px;}
+  .ctrl button{border:1px solid var(--line); background:#fff; border-radius:6px; width:34px; height:30px; cursor:pointer; font-size:13px; color:var(--sub);}
+  .ctrl button:hover{background:var(--bg);}
+  .ctrl button.del{color:var(--danger); border-color:#eac8c3;}
+  .num{font-size:12px; color:var(--sub); text-align:center; font-weight:700;}
+  #empty{text-align:center; color:var(--sub); padding:30px 0; font-size:13px;}
+
+  /* ── 인쇄용 대지 ────────────────────────── */
+  #sheets{display:none;}
+  .sheet{width:210mm; min-height:297mm; background:#fff; margin:0 auto 10mm; padding:12mm 14mm; page-break-after:always; display:flex; flex-direction:column;}
+  .sheet-head{border:2px solid #000; margin-bottom:5mm;}
+  .sheet-head .title{text-align:center; font-size:20px; font-weight:800; padding:3.5mm 0; border-bottom:1px solid #000; letter-spacing:8px;}
+  .sheet-head table{width:100%; border-collapse:collapse; font-size:12px;}
+  .sheet-head th{background:#f0f2f5; border:1px solid #000; border-width:0 1px 0 0; padding:2.5mm 2mm; width:22mm; font-weight:700;}
+  .sheet-head td{border:1px solid #000; border-width:0 1px 0 0; padding:2.5mm 3mm;}
+  .sheet-head tr+tr th, .sheet-head tr+tr td{border-top:1px solid #000;}
+  .sheet-head th:last-child, .sheet-head td:last-child{border-right:0;}
+  .photos{flex:1; display:grid; gap:5mm;}
+  .photos.per2{grid-template-rows:1fr 1fr; grid-template-columns:1fr;}
+  .photos.per4{grid-template-rows:1fr 1fr; grid-template-columns:1fr 1fr;}
+  .photos.per6{grid-template-rows:1fr 1fr 1fr; grid-template-columns:1fr 1fr;}
+  .ph{border:1px solid #000; display:flex; flex-direction:column; overflow:hidden;}
+  .ph .img{flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#fafafa; min-height:0;}
+  .ph .img img{max-width:100%; max-height:100%; object-fit:contain;}
+  .ph .cap{border-top:1px solid #000; font-size:11px;}
+  .ph .cap table{width:100%; border-collapse:collapse;}
+  .ph .cap th{background:#f0f2f5; border-right:1px solid #000; width:16mm; padding:1.6mm 1mm; font-weight:700; text-align:center;}
+  .ph .cap td{padding:1.6mm 2mm; border-right:1px solid #000;}
+  .ph .cap td:last-child{border-right:0;}
+  .ph .cap tr+tr th, .ph .cap tr+tr td{border-top:1px solid #000;}
+  .pageno{text-align:center; font-size:11px; margin-top:3mm;}
+
+  @media print{
+    body{background:#fff;}
+    header, .panel, #dropzone, #list, #empty{display:none !important;}
+    #sheets{display:block !important;}
+    .sheet{margin:0; box-shadow:none; page-break-after:always;}
+    .sheet:last-child{page-break-after:auto;}
+    @page{size:A4 portrait; margin:0;}
+  }
+  .preview #sheets{display:block;}
+  .preview #dropzone, .preview #list, .preview .panel{display:none;}
+  .preview .sheet{box-shadow:0 2px 14px rgba(0,0,0,.18);}
+</style>
+</head>
+<body>
+<header>
+  <h1>📷 사진대지 자동 생성기 <small>사진은 PC 밖으로 나가지 않습니다 (완전 오프라인)</small></h1>
+  <button class="btn ghost" id="btnSave">프로젝트 저장</button>
+  <button class="btn ghost" id="btnLoad">불러오기</button>
+  <button class="btn" id="btnPreview">미리보기</button>
+  <button class="btn primary" id="btnPrint">인쇄 / PDF 저장</button>
+</header>
+
+<div class="panel">
+  <h2>공사 정보 (모든 페이지 머리말에 표시됩니다)</h2>
+  <div class="grid">
+    <div class="field"><label>공 사 명</label><input id="fProject" placeholder="예: ○○지구 공동주택 신축공사"></div>
+    <div class="field"><label>공사 위치</label><input id="fSite" placeholder="예: 서울시 ○○구 ○○동"></div>
+    <div class="field"><label>업 체 명</label><input id="fCompany" placeholder="예: (주)○○건설"></div>
+    <div class="field"><label>작 성 일</label><input id="fDate" type="date"></div>
+    <div class="field"><label>문서 제목</label><input id="fTitle" value="사 진 대 지"></div>
+    <div class="field"><label>페이지당 사진 수</label>
+      <select id="fPerPage"><option value="2">2장 (세로 2단)</option><option value="4" selected>4장 (2×2)</option><option value="6">6장 (2×3)</option></select>
+    </div>
+  </div>
+</div>
+
+<div id="dropzone">
+  <strong>여기에 현장 사진을 끌어다 놓으세요</strong>
+  클릭해서 파일을 선택할 수도 있습니다 · JPG/PNG · 여러 장 한번에 가능 · 촬영일자 자동 인식(EXIF)
+  <input type="file" id="fileInput" accept="image/*" multiple hidden>
+</div>
+
+<div id="list"><div id="empty">아직 추가된 사진이 없습니다.</div></div>
+<div id="sheets"></div>
+<input type="file" id="loadInput" accept=".json" hidden>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+let photos = []; // {src, work, loc, date, desc}
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('#fDate').value = new Date().toISOString().slice(0,10);
+});
+
+/* ── EXIF 촬영일 추출 (DateTimeOriginal) ── */
+function exifDate(buf){
+  try{
+    const v = new DataView(buf);
+    if (v.getUint16(0) !== 0xFFD8) return null;
+    let o = 2;
+    while (o < v.byteLength - 4){
+      if (v.getUint8(o) !== 0xFF) break;
+      const marker = v.getUint8(o+1), size = v.getUint16(o+2);
+      if (marker === 0xE1 && v.getUint32(o+4) === 0x45786966){ // "Exif"
+        const t = o + 10; // TIFF header start
+        const le = v.getUint16(t) === 0x4949;
+        const g16 = p => v.getUint16(t+p, le), g32 = p => v.getUint32(t+p, le);
+        const readIFD = (off, want) => {
+          const n = g16(off); let found = null;
+          for (let i=0;i<n;i++){
+            const e = off + 2 + i*12, tag = g16(e);
+            if (tag === want) found = e;
+          }
+          return found;
+        };
+        const ifd0 = g32(4);
+        const exifPtr = readIFD(ifd0, 0x8769);
+        if (!exifPtr) return null;
+        const sub = g32(exifPtr + 8);
+        const dt = readIFD(sub, 0x9003);
+        if (!dt) return null;
+        const valOff = g32(dt + 8);
+        let s = '';
+        for (let i=0;i<19;i++) s += String.fromCharCode(v.getUint8(t + valOff + i));
+        const m = s.match(/^(\d{4}):(\d{2}):(\d{2})/);
+        return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+      }
+      o += 2 + size;
+    }
+  }catch(e){}
+  return null;
+}
+
+/* ── 사진 추가 (리사이즈해서 보관) ── */
+async function addFiles(files){
+  for (const f of files){
+    if (!f.type.startsWith('image/')) continue;
+    const buf = await f.arrayBuffer();
+    const shot = exifDate(buf);
+    const src = await resize(new Blob([buf], {type:f.type}));
+    photos.push({src, work:'', loc:'', date: shot || $('#fDate').value, desc:''});
+  }
+  renderList();
+}
+function resize(blob){
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1600;
+      const r = Math.min(1, MAX / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width*r); c.height = Math.round(img.height*r);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      res(c.toDataURL('image/jpeg', 0.85));
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(blob);
+  });
+}
+
+/* ── 편집 목록 ── */
+function renderList(){
+  const list = $('#list');
+  list.innerHTML = photos.length ? '' : '<div id="empty">아직 추가된 사진이 없습니다.</div>';
+  photos.forEach((p, i) => {
+    const el = document.createElement('div');
+    el.className = 'item';
+    el.innerHTML = `
+      <div><img src="${p.src}"><div class="num">No.${i+1}</div></div>
+      <div class="meta">
+        <div class="field"><label>공 종</label><input data-k="work" value=""></div>
+        <div class="field"><label>위 치</label><input data-k="loc" value=""></div>
+        <div class="field"><label>촬영일</label><input data-k="date" type="date"></div>
+        <div class="field wide"><label>작업 내용</label><input data-k="desc" placeholder="예: 지하 1층 벽체 철근 배근 검측"></div>
+      </div>
+      <div class="ctrl">
+        <button data-a="up" title="위로">▲</button>
+        <button data-a="down" title="아래로">▼</button>
+        <button data-a="del" class="del" title="삭제">✕</button>
+      </div>`;
+    el.querySelectorAll('input[data-k]').forEach(inp => {
+      inp.value = p[inp.dataset.k];
+      inp.addEventListener('input', () => { p[inp.dataset.k] = inp.value; });
+    });
+    el.querySelectorAll('button[data-a]').forEach(b => b.addEventListener('click', () => {
+      const a = b.dataset.a;
+      if (a==='del') photos.splice(i,1);
+      if (a==='up' && i>0) [photos[i-1],photos[i]]=[photos[i],photos[i-1]];
+      if (a==='down' && i<photos.length-1) [photos[i+1],photos[i]]=[photos[i],photos[i+1]];
+      renderList();
+    }));
+    list.appendChild(el);
+  });
+}
+
+/* ── 인쇄용 대지 생성 ── */
+function buildSheets(){
+  const per = +$('#fPerPage').value;
+  const wrap = $('#sheets');
+  wrap.innerHTML = '';
+  const pages = Math.max(1, Math.ceil(photos.length / per));
+  for (let pg=0; pg<pages; pg++){
+    const chunk = photos.slice(pg*per, pg*per+per);
+    const sheet = document.createElement('div');
+    sheet.className = 'sheet';
+    sheet.innerHTML = `
+      <div class="sheet-head">
+        <div class="title">${esc($('#fTitle').value)||'사 진 대 지'}</div>
+        <table>
+          <tr><th>공 사 명</th><td>${esc($('#fProject').value)}</td><th>작 성 일</th><td>${esc($('#fDate').value)}</td></tr>
+          <tr><th>공사위치</th><td>${esc($('#fSite').value)}</td><th>업 체 명</th><td>${esc($('#fCompany').value)}</td></tr>
+        </table>
+      </div>
+      <div class="photos per${per}"></div>
+      <div class="pageno">- ${pg+1} / ${pages} -</div>`;
+    const grid = sheet.querySelector('.photos');
+    chunk.forEach(p => {
+      const d = document.createElement('div');
+      d.className = 'ph';
+      d.innerHTML = `
+        <div class="img"><img src="${p.src}"></div>
+        <div class="cap"><table>
+          <tr><th>공 종</th><td>${esc(p.work)}</td><th>촬영일</th><td>${esc(p.date)}</td></tr>
+          <tr><th>위 치</th><td>${esc(p.loc)}</td><th>내 용</th><td>${esc(p.desc)}</td></tr>
+        </table></div>`;
+      grid.appendChild(d);
+    });
+    for (let i=chunk.length; i<per; i++){
+      const d = document.createElement('div');
+      d.className = 'ph';
+      d.innerHTML = `<div class="img"></div><div class="cap"><table>
+        <tr><th>공 종</th><td></td><th>촬영일</th><td></td></tr>
+        <tr><th>위 치</th><td></td><th>내 용</th><td></td></tr></table></div>`;
+      grid.appendChild(d);
+    }
+    wrap.appendChild(sheet);
+  }
+}
+const esc = s => (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ── 저장 / 불러오기 ── */
+function saveProject(){
+  const data = {
+    v:1, project:$('#fProject').value, site:$('#fSite').value, company:$('#fCompany').value,
+    date:$('#fDate').value, title:$('#fTitle').value, perPage:$('#fPerPage').value, photos
+  };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], {type:'application/json'}));
+  a.download = `사진대지_${$('#fProject').value||'프로젝트'}_${$('#fDate').value}.json`;
+  a.click();
+}
+function loadProject(file){
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const d = JSON.parse(r.result);
+      $('#fProject').value = d.project||''; $('#fSite').value = d.site||'';
+      $('#fCompany').value = d.company||''; $('#fDate').value = d.date||'';
+      $('#fTitle').value = d.title||'사 진 대 지'; $('#fPerPage').value = d.perPage||'4';
+      photos = d.photos||[];
+      renderList();
+    }catch(e){ alert('프로젝트 파일을 읽을 수 없습니다.'); }
+  };
+  r.readAsText(file);
+}
+
+/* ── 이벤트 ── */
+const dz = $('#dropzone');
+dz.addEventListener('click', () => $('#fileInput').click());
+$('#fileInput').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value=''; });
+['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('on'); }));
+['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('on'); }));
+dz.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
+
+$('#btnPrint').addEventListener('click', () => { buildSheets(); document.body.classList.remove('preview'); window.print(); });
+$('#btnPreview').addEventListener('click', () => {
+  const on = document.body.classList.toggle('preview');
+  if (on) buildSheets();
+  $('#btnPreview').textContent = on ? '편집으로 돌아가기' : '미리보기';
+});
+$('#btnSave').addEventListener('click', saveProject);
+$('#btnLoad').addEventListener('click', () => $('#loadInput').click());
+$('#loadInput').addEventListener('change', e => { if (e.target.files[0]) loadProject(e.target.files[0]); e.target.value=''; });
+</script>
+</body>
+</html>

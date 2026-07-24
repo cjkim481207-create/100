@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>현장문서 3종 세트 — 사진대지 · 공사일보 · 물량계산기</title>
+<style>
+  :root{--ink:#1a2332; --sub:#5a6a80; --line:#d8dfe8; --bg:#f7f9fc; --accent:#1558c4;}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:'Malgun Gothic','맑은 고딕',-apple-system,sans-serif; background:var(--bg); color:var(--ink); line-height:1.7;}
+  .hero{background:var(--ink); color:#fff; padding:64px 20px 56px; text-align:center;}
+  .hero .tag{display:inline-block; background:#39465c; border-radius:20px; padding:6px 16px; font-size:13px; margin-bottom:18px; color:#c9d4e4;}
+  .hero h1{font-size:34px; line-height:1.35; margin-bottom:14px;}
+  .hero h1 em{color:#7fb0ff; font-style:normal;}
+  .hero p{color:#aab8cc; font-size:16px; max-width:560px; margin:0 auto;}
+  .wrap{max-width:960px; margin:0 auto; padding:0 20px;}
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; margin:-30px auto 0; position:relative;}
+  .card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:26px 24px; box-shadow:0 4px 20px rgba(20,40,80,.07); display:flex; flex-direction:column;}
+  .card .ico{font-size:32px; margin-bottom:10px;}
+  .card h2{font-size:18px; margin-bottom:8px;}
+  .card p{font-size:13.5px; color:var(--sub); flex:1;}
+  .card ul{font-size:13px; color:var(--sub); margin:10px 0 16px 18px;}
+  .card a{display:block; text-align:center; background:var(--accent); color:#fff; text-decoration:none; border-radius:8px; padding:11px; font-weight:700; font-size:14px;}
+  .card a:hover{filter:brightness(1.1);}
+  section.why{padding:56px 0 20px;}
+  section.why h2{text-align:center; font-size:24px; margin-bottom:28px;}
+  .feats{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px;}
+  .feat{background:#fff; border:1px solid var(--line); border-radius:10px; padding:20px;}
+  .feat b{display:block; margin-bottom:6px; font-size:15px;}
+  .feat span{font-size:13.5px; color:var(--sub);}
+  footer{text-align:center; color:var(--sub); font-size:12.5px; padding:44px 20px 30px;}
+</style>
+</head>
+<body>
+<div class="hero">
+  <span class="tag">시공사 건축팀이 현장을 위해 직접 만들었습니다</span>
+  <h1>매일 1시간씩 버리던 현장 서류,<br><em>클릭 몇 번</em>으로 끝내세요</h1>
+  <p>설치 없음 · 로그인 없음 · 사진과 데이터가 PC 밖으로 나가지 않는 완전 오프라인 도구 3종</p>
+</div>
+
+<div class="wrap">
+  <div class="cards">
+    <div class="card">
+      <div class="ico">📷</div>
+      <h2>사진대지 자동 생성기</h2>
+      <p>현장 사진을 끌어다 놓으면 A4 사진대지가 자동으로 완성됩니다.</p>
+      <ul>
+        <li>촬영일자 자동 인식 (EXIF)</li>
+        <li>2 / 4 / 6장 레이아웃 선택</li>
+        <li>공종·위치·내용 캡션 표</li>
+        <li>인쇄 → PDF 저장, 프로젝트 파일 보관</li>
+      </ul>
+      <a href="tools/photo-report.html">바로 사용하기</a>
+    </div>
+    <div class="card">
+      <div class="ico">📋</div>
+      <h2>공사일보 작성기</h2>
+      <p>출역인원·장비·자재·작업사항을 입력하면 결재란까지 갖춘 공사일보가 나옵니다.</p>
+      <ul>
+        <li>전일 일보 복사 (명일계획 → 금일작업 자동 이동)</li>
+        <li>출역인원 자동 합계</li>
+        <li>브라우저 자동 저장</li>
+        <li>담당–공사팀장–소장 결재란 포함</li>
+      </ul>
+      <a href="tools/daily-report.html">바로 사용하기</a>
+    </div>
+    <div class="card">
+      <div class="ico">🧮</div>
+      <h2>현장 물량 계산기</h2>
+      <p>현장에서 바로 쓰는 개산 물량 5종. 휴대폰에서도 동작합니다.</p>
+      <ul>
+        <li>콘크리트 타설량 + 레미콘 대수</li>
+        <li>철근 중량 (KS 단위중량)</li>
+        <li>거푸집 면적 · 유로폼 환산</li>
+        <li>벽돌/블록 · 타일 수량</li>
+      </ul>
+      <a href="tools/calculator.html">바로 사용하기</a>
+    </div>
+  </div>
+
+  <section class="why">
+    <h2>왜 이 도구인가요?</h2>
+    <div class="feats">
+      <div class="feat"><b>🔒 보안 검토가 필요 없습니다</b><span>서버가 없습니다. 사진도, 일보 내용도 브라우저 밖으로 단 1바이트도 전송되지 않습니다. 인터넷이 끊긴 현장 PC에서도 동작합니다.</span></div>
+      <div class="feat"><b>⚡ 설치가 없습니다</b><span>HTML 파일을 더블클릭하면 끝. 현장 PC 권한 문제, 프로그램 설치 승인 절차가 필요 없습니다.</span></div>
+      <div class="feat"><b>🖨️ 그대로 결재 올리는 양식</b><span>브라우저 인쇄(Ctrl+P)로 A4에 딱 맞는 문서가 나옵니다. PDF로 저장해 바로 공유하세요.</span></div>
+      <div class="feat"><b>💾 이어서 작업</b><span>프로젝트 파일로 저장해두면 내일 이어서 작성할 수 있습니다. 공사일보는 자동 저장됩니다.</span></div>
+    </div>
+  </section>
+</div>
+
+<footer>현장문서 3종 세트 · 문의: cjkim481207@gmail.com</footer>
+</body>
+</html>

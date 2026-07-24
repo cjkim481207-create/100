@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>현장 물량 계산기</title>
+<style>
+  :root{
+    --ink:#1a2332; --sub:#5a6a80; --line:#d8dfe8; --bg:#f2f5f9;
+    --accent:#1558c4; --card:#fff;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:'Malgun Gothic','맑은 고딕',-apple-system,sans-serif; background:var(--bg); color:var(--ink); font-size:14px;}
+  header{background:var(--ink); color:#fff; padding:12px 20px;}
+  header h1{font-size:17px; font-weight:700;}
+  header h1 small{font-weight:400; opacity:.6; font-size:12px; margin-left:8px;}
+
+  nav{max-width:960px; margin:16px auto 0; padding:0 12px; display:flex; gap:8px; flex-wrap:wrap;}
+  nav button{border:1px solid var(--line); background:#fff; border-radius:20px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; color:var(--sub);}
+  nav button.on{background:var(--accent); color:#fff; border-color:var(--accent);}
+
+  main{max-width:960px; margin:14px auto 60px; padding:0 12px;}
+  .tab{display:none;}
+  .tab.on{display:block;}
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:14px;}
+  .panel h2{font-size:15px; margin-bottom:4px;}
+  .panel p.hint{font-size:12px; color:var(--sub); margin-bottom:14px;}
+  .row{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px 14px; margin-bottom:12px;}
+  .field label{display:block; font-size:12px; color:var(--sub); margin-bottom:4px; font-weight:600;}
+  .field input, .field select{width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:6px; font-size:14px; font-family:inherit;}
+  .field input:focus{outline:2px solid var(--accent); outline-offset:-1px;}
+  .result{background:#eaf1fd; border:1px solid #bcd2f5; border-radius:8px; padding:14px 16px; font-size:14px; line-height:1.9;}
+  .result b{font-size:18px; color:var(--accent);}
+  .result small{color:var(--sub);}
+  table.ref{width:100%; border-collapse:collapse; font-size:13px; margin-top:10px;}
+  table.ref th, table.ref td{border:1px solid var(--line); padding:7px 10px; text-align:center;}
+  table.ref th{background:#f0f2f5;}
+</style>
+</head>
+<body>
+<header><h1>🧮 현장 물량 계산기 <small>콘크리트 · 철근 · 거푸집 · 조적 · 타일 — 오프라인 동작</small></h1></header>
+
+<nav>
+  <button data-tab="conc" class="on">콘크리트</button>
+  <button data-tab="rebar">철근 중량</button>
+  <button data-tab="form">거푸집</button>
+  <button data-tab="brick">벽돌 / 블록</button>
+  <button data-tab="tile">타일</button>
+</nav>
+
+<main>
+  <!-- 콘크리트 -->
+  <section class="tab on" id="tab-conc">
+    <div class="panel">
+      <h2>콘크리트 타설량</h2>
+      <p class="hint">부재 치수를 입력하면 체적과 할증 적용 주문량, 레미콘 대수를 계산합니다.</p>
+      <div class="row">
+        <div class="field"><label>부재 형태</label>
+          <select id="cShape">
+            <option value="slab">슬래브/기초 (가로×세로×두께)</option>
+            <option value="wall">벽체 (길이×높이×두께)</option>
+            <option value="col">기둥 (가로×세로×높이)</option>
+            <option value="beam">보 (폭×춤×길이)</option>
+          </select>
+        </div>
+        <div class="field"><label id="cL1">가로 (m)</label><input id="cA" type="number" step="0.01" value="10"></div>
+        <div class="field"><label id="cL2">세로 (m)</label><input id="cB" type="number" step="0.01" value="10"></div>
+        <div class="field"><label id="cL3">두께 (m)</label><input id="cC" type="number" step="0.01" value="0.2"></div>
+        <div class="field"><label>수량 (개소)</label><input id="cN" type="number" step="1" value="1"></div>
+        <div class="field"><label>할증률 (%)</label><input id="cLoss" type="number" step="0.5" value="2"></div>
+      </div>
+      <div class="result" id="cOut"></div>
+    </div>
+  </section>
+
+  <!-- 철근 -->
+  <section class="tab" id="tab-rebar">
+    <div class="panel">
+      <h2>철근 중량 산출</h2>
+      <p class="hint">KS D 3504 이형철근 단위중량 기준. 총 길이 = 본당 길이 × 본수.</p>
+      <div class="row">
+        <div class="field"><label>규격</label>
+          <select id="rSize"></select>
+        </div>
+        <div class="field"><label>본당 길이 (m)</label><input id="rLen" type="number" step="0.1" value="8"></div>
+        <div class="field"><label>본수 (개)</label><input id="rCnt" type="number" step="1" value="100"></div>
+        <div class="field"><label>할증률 (%)</label><input id="rLoss" type="number" step="0.5" value="3"></div>
+      </div>
+      <div class="result" id="rOut"></div>
+      <table class="ref">
+        <tr><th>규격</th><th>D10</th><th>D13</th><th>D16</th><th>D19</th><th>D22</th><th>D25</th><th>D29</th><th>D32</th></tr>
+        <tr><th>kg/m</th><td>0.560</td><td>0.995</td><td>1.56</td><td>2.25</td><td>3.04</td><td>3.98</td><td>5.04</td><td>6.23</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 거푸집 -->
+  <section class="tab" id="tab-form">
+    <div class="panel">
+      <h2>거푸집 면적</h2>
+      <p class="hint">접촉 면적 기준 개산. 벽체는 양면, 기둥은 4면, 보는 저면+양측면으로 계산합니다.</p>
+      <div class="row">
+        <div class="field"><label>부재 형태</label>
+          <select id="fShape">
+            <option value="wall">벽체 (길이×높이, 양면)</option>
+            <option value="col">기둥 (가로,세로,높이 → 4면)</option>
+            <option value="beam">보 (폭,춤,길이 → 저면+양측)</option>
+            <option value="slab">슬래브 저면 (가로×세로)</option>
+          </select>
+        </div>
+        <div class="field"><label id="fL1">길이 (m)</label><input id="fA" type="number" step="0.01" value="10"></div>
+        <div class="field"><label id="fL2">높이 (m)</label><input id="fB" type="number" step="0.01" value="3"></div>
+        <div class="field"><label id="fL3">-</label><input id="fC" type="number" step="0.01" value="0" disabled></div>
+        <div class="field"><label>수량 (개소)</label><input id="fN" type="number" step="1" value="1"></div>
+      </div>
+      <div class="result" id="fOut"></div>
+    </div>
+  </section>
+
+  <!-- 벽돌/블록 -->
+  <section class="tab" id="tab-brick">
+    <div class="panel">
+      <h2>벽돌 / 블록 수량</h2>
+      <p class="hint">표준 매수 기준(줄눈 10mm): 시멘트벽돌 0.5B 75매/㎡ · 1.0B 149매/㎡ · 1.5B 224매/㎡, 시멘트블록 13매/㎡.</p>
+      <div class="row">
+        <div class="field"><label>종류 / 쌓기</label>
+          <select id="bType">
+            <option value="75">시멘트벽돌 0.5B (75매/㎡)</option>
+            <option value="149">시멘트벽돌 1.0B (149매/㎡)</option>
+            <option value="224">시멘트벽돌 1.5B (224매/㎡)</option>
+            <option value="13">시멘트블록 390×190×두께 (13매/㎡)</option>
+          </select>
+        </div>
+        <div class="field"><label>벽 면적 (㎡)</label><input id="bArea" type="number" step="0.1" value="100"></div>
+        <div class="field"><label>개구부 공제 (㎡)</label><input id="bOpen" type="number" step="0.1" value="0"></div>
+        <div class="field"><label>할증률 (%)</label><input id="bLoss" type="number" step="0.5" value="5"></div>
+      </div>
+      <div class="result" id="bOut"></div>
+    </div>
+  </section>
+
+  <!-- 타일 -->
+  <section class="tab" id="tab-tile">
+    <div class="panel">
+      <h2>타일 수량</h2>
+      <p class="hint">타일 규격과 줄눈 폭으로 ㎡당 매수를 계산합니다. 도기질 할증 3%, 자기질 3%, 모자이크 3% 권장.</p>
+      <div class="row">
+        <div class="field"><label>타일 가로 (mm)</label><input id="tW" type="number" step="1" value="300"></div>
+        <div class="field"><label>타일 세로 (mm)</label><input id="tH" type="number" step="1" value="300"></div>
+        <div class="field"><label>줄눈 폭 (mm)</label><input id="tJ" type="number" step="0.5" value="3"></div>
+        <div class="field"><label>시공 면적 (㎡)</label><input id="tArea" type="number" step="0.1" value="50"></div>
+        <div class="field"><label>할증률 (%)</label><input id="tLoss" type="number" step="0.5" value="3"></div>
+      </div>
+      <div class="result" id="tOut"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const fmt = (n, d=2) => Number(n.toFixed(d)).toLocaleString('ko-KR');
+
+/* 탭 */
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x===b));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-'+b.dataset.tab));
+}));
+
+/* 콘크리트 */
+const C_LABELS = {
+  slab:['가로 (m)','세로 (m)','두께 (m)'], wall:['길이 (m)','높이 (m)','두께 (m)'],
+  col:['가로 (m)','세로 (m)','높이 (m)'], beam:['폭 (m)','춤 (m)','길이 (m)'],
+};
+function calcConc(){
+  const [l1,l2,l3] = C_LABELS[$('#cShape').value];
+  $('#cL1').textContent=l1; $('#cL2').textContent=l2; $('#cL3').textContent=l3;
+  const v = (+$('#cA').value||0) * (+$('#cB').value||0) * (+$('#cC').value||0) * (+$('#cN').value||1);
+  const order = v * (1 + (+$('#cLoss').value||0)/100);
+  $('#cOut').innerHTML =
+    `설계 체적: <b>${fmt(v)} ㎥</b><br>` +
+    `할증 적용 주문량: <b>${fmt(order)} ㎥</b><br>` +
+    `레미콘(6㎥/대): <b>${Math.ceil(order/6)} 대</b> <small>· 마지막 차량 잔량 ${fmt(order - Math.floor(order/6)*6)} ㎥</small>`;
+}
+['cShape','cA','cB','cC','cN','cLoss'].forEach(id => $('#'+id).addEventListener('input', calcConc));
+
+/* 철근 */
+const REBAR = {D10:0.560, D13:0.995, D16:1.560, D19:2.250, D22:3.040, D25:3.980, D29:5.040, D32:6.230};
+$('#rSize').innerHTML = Object.keys(REBAR).map(k=>`<option ${k==='D13'?'selected':''}>${k}</option>`).join('');
+function calcRebar(){
+  const u = REBAR[$('#rSize').value];
+  const len = (+$('#rLen').value||0) * (+$('#rCnt').value||0);
+  const w = len * u;
+  const order = w * (1 + (+$('#rLoss').value||0)/100);
+  $('#rOut').innerHTML =
+    `총 길이: <b>${fmt(len)} m</b> <small>(${$('#rSize').value}, ${u} kg/m)</small><br>` +
+    `산출 중량: <b>${fmt(w,1)} kg</b> = ${fmt(w/1000,3)} ton<br>` +
+    `할증 적용 발주량: <b>${fmt(order/1000,3)} ton</b>`;
+}
+['rSize','rLen','rCnt','rLoss'].forEach(id => $('#'+id).addEventListener('input', calcRebar));
+
+/* 거푸집 */
+const F_CFG = {
+  wall:{labels:['길이 (m)','높이 (m)','-'], use3:false, area:(a,b)=> a*b*2},
+  col:{labels:['가로 (m)','세로 (m)','높이 (m)'], use3:true, area:(a,b,c)=> (a+b)*2*c},
+  beam:{labels:['폭 (m)','춤 (m)','길이 (m)'], use3:true, area:(a,b,c)=> (a + b*2)*c},
+  slab:{labels:['가로 (m)','세로 (m)','-'], use3:false, area:(a,b)=> a*b},
+};
+function calcForm(){
+  const cfg = F_CFG[$('#fShape').value];
+  ['fL1','fL2','fL3'].forEach((id,i)=> $('#'+id).textContent = cfg.labels[i]);
+  $('#fC').disabled = !cfg.use3;
+  const area = cfg.area(+$('#fA').value||0, +$('#fB').value||0, +$('#fC').value||0) * (+$('#fN').value||1);
+  $('#fOut').innerHTML = `거푸집 면적: <b>${fmt(area)} ㎡</b> <small>· 유로폼(600×1200) 환산 약 ${Math.ceil(area/0.72)} 매</small>`;
+}
+['fShape','fA','fB','fC','fN'].forEach(id => $('#'+id).addEventListener('input', calcForm));
+
+/* 벽돌/블록 */
+function calcBrick(){
+  const per = +$('#bType').value;
+  const area = Math.max(0, (+$('#bArea').value||0) - (+$('#bOpen').value||0));
+  const qty = area * per;
+  const order = qty * (1 + (+$('#bLoss').value||0)/100);
+  $('#bOut').innerHTML =
+    `유효 면적: <b>${fmt(area)} ㎡</b><br>` +
+    `소요 수량: <b>${fmt(qty,0)} 매</b><br>` +
+    `할증 적용 발주량: <b>${fmt(Math.ceil(order),0)} 매</b>`;
+}
+['bType','bArea','bOpen','bLoss'].forEach(id => $('#'+id).addEventListener('input', calcBrick));
+
+/* 타일 */
+function calcTile(){
+  const w = +$('#tW').value||1, h = +$('#tH').value||1, j = +$('#tJ').value||0;
+  const per = 1e6 / ((w+j)*(h+j));
+  const qty = per * (+$('#tArea').value||0);
+  const order = qty * (1 + (+$('#tLoss').value||0)/100);
+  $('#tOut').innerHTML =
+    `㎡당 매수: <b>${fmt(per,1)} 매</b> <small>(줄눈 ${j}mm 포함)</small><br>` +
+    `소요 수량: <b>${fmt(qty,0)} 매</b><br>` +
+    `할증 적용 발주량: <b>${fmt(Math.ceil(order),0)} 매</b>`;
+}
+['tW','tH','tJ','tArea','tLoss'].forEach(id => $('#'+id).addEventListener('input', calcTile));
+
+calcConc(); calcRebar(); calcForm(); calcBrick(); calcTile();
+</script>
+</body>
+</html>
