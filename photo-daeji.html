@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>사진대지 자동생성</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:"Malgun Gothic",sans-serif;margin:0;background:#eee;color:#111}
+  .bar{background:#25a;color:#fff;padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:sticky;top:0;z-index:9}
+  .bar h1{font-size:16px;margin:0;flex:1}
+  .bar button,.bar label.btn{padding:8px 14px;border:0;border-radius:6px;cursor:pointer;font-size:14px;background:#fff;color:#25a;font-weight:700}
+  .head{background:#fff;max-width:800px;margin:14px auto;padding:14px;box-shadow:0 1px 5px rgba(0,0,0,.15)}
+  .head input{border:1px solid #bbb;padding:6px;font:inherit;border-radius:4px;width:100%}
+  .head .row{display:flex;gap:8px;margin-bottom:8px}
+  .head .row>div{flex:1}
+  .head label{font-size:12px;color:#555}
+  .page{background:#fff;max-width:800px;margin:0 auto 14px;padding:20px;box-shadow:0 1px 5px rgba(0,0,0,.15)}
+  .page h2{text-align:center;font-size:18px;margin:0 0 10px;letter-spacing:6px}
+  table{width:100%;border-collapse:collapse}
+  td,th{border:1px solid #333;font-size:12px;padding:4px 6px}
+  th{background:#f0f0f0;width:56px;text-align:center;white-space:nowrap}
+  .ph{width:62%;height:200px;text-align:center;padding:2px}
+  .ph img{max-width:100%;max-height:196px}
+  .info input,.info textarea{width:100%;border:0;font:inherit;padding:2px;background:transparent}
+  .info input:focus,.info textarea:focus{outline:1px solid #25a;background:#f5f8ff}
+  .info textarea{resize:none;height:80px}
+  .del{float:right;background:#d33;color:#fff;border:0;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px}
+  .empty{max-width:800px;margin:30px auto;text-align:center;color:#888}
+  @media print{
+    .bar,.del,.empty,.head{display:none}
+    body{background:#fff}
+    .page{box-shadow:none;margin:0;max-width:none;page-break-after:always}
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>사진대지 자동생성</h1>
+  <label class="btn">사진 추가<input type="file" accept="image/*" multiple hidden onchange="add(this.files)"></label>
+  <button onclick="window.print()">인쇄 / PDF저장</button>
+</div>
+
+<div class="head">
+  <div class="row">
+    <div><label>공사명</label><input id="h_prj" placeholder="○○아파트 건설공사" oninput="draw()"></div>
+    <div><label>업체명</label><input id="h_co" placeholder="○○건설(주)" oninput="draw()"></div>
+    <div><label>촬영일자</label><input id="h_date" type="date" oninput="draw()"></div>
+  </div>
+  <div style="font-size:12px;color:#777">휴대폰: 사진 촬영 후 이 페이지 열고 [사진 추가] → 갤러리에서 여러 장 선택 → 내용 입력 → [인쇄/PDF저장]</div>
+</div>
+
+<div id="pages"></div>
+<div class="empty" id="empty">아직 사진이 없습니다. [사진 추가]를 눌러 시작하세요.</div>
+
+<script>
+const items=[]; // {src, gong, loc, memo}
+const PER=3;    // 페이지당 사진 수
+function add(files){
+  [...files].forEach(f=>{
+    const r=new FileReader();
+    r.onload=e=>{items.push({src:e.target.result,gong:"",loc:"",memo:""});draw();};
+    r.readAsDataURL(f);
+  });
+}
+function del(i){items.splice(i,1);draw();}
+function set(i,k,v){items[i][k]=v;}
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+function draw(){
+  const prj=document.getElementById("h_prj").value,
+        co=document.getElementById("h_co").value,
+        dt=document.getElementById("h_date").value;
+  const box=document.getElementById("pages");
+  document.getElementById("empty").style.display=items.length?"none":"block";
+  let html="";
+  for(let p=0;p<items.length;p+=PER){
+    html+=`<div class="page"><h2>사 진 대 지</h2>
+      <table><tr><th>공사명</th><td>${esc(prj)}</td><th>업체명</th><td>${esc(co)}</td><th>일자</th><td>${esc(dt)}</td></tr></table>
+      <table style="margin-top:6px">`;
+    for(let i=p;i<Math.min(p+PER,items.length);i++){
+      const it=items[i];
+      html+=`<tr>
+        <td class="ph" rowspan="4"><img src="${it.src}"></td>
+        <th>공종</th><td class="info"><button class="del" onclick="del(${i})">삭제</button><input value="${esc(it.gong)}" oninput="set(${i},'gong',this.value)" placeholder="예: 철근콘크리트"></td></tr>
+        <tr><th>위치</th><td class="info"><input value="${esc(it.loc)}" oninput="set(${i},'loc',this.value)" placeholder="예: 지하1층 A구역"></td></tr>
+        <tr><th>일자</th><td class="info">${esc(dt)}</td></tr>
+        <tr><th>내용</th><td class="info"><textarea oninput="set(${i},'memo',this.value)" placeholder="작업 내용">${esc(it.memo)}</textarea></td></tr>`;
+    }
+    html+="</table></div>";
+  }
+  box.innerHTML=html;
+}
+window.onload=()=>{const t=document.getElementById("h_date");if(!t.value)t.value=new Date().toISOString().slice(0,10);draw();};
+</script>
+</body>
+</html>
