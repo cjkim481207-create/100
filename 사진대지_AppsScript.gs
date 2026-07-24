@@ -31,6 +31,22 @@ function findTemplate() {
   return it.next();
 }
 
+/** 어떤 형식(HEIF/webp 등)·용량이든 시트에 넣을 수 있는 JPEG(약 1600px)로 변환.
+ * 드라이브 썸네일을 이용 → 형식·2MB 제한 문제를 한 번에 해결. 실패 시 원본 사용. */
+function photoBlob(file, token) {
+  try {
+    const meta = JSON.parse(UrlFetchApp.fetch(
+      'https://www.googleapis.com/drive/v3/files/' + file.getId() + '?fields=thumbnailLink',
+      { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true }).getContentText());
+    if (meta.thumbnailLink) {
+      const link = meta.thumbnailLink.replace(/=s\d+.*/, '=s1600');
+      const res = UrlFetchApp.fetch(link, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+      if (res.getResponseCode() === 200) return res.getBlob().setName(file.getName() + '.jpg');
+    }
+  } catch (e) { /* 아래 원본으로 폴백 */ }
+  return file.getBlob();
+}
+
 function doGet(e) {
   const today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
   const html =
@@ -70,6 +86,7 @@ function generate(p) {
   if (!files.length) throw new Error('"' + NAMES.inFolder + '" 폴더에 사진이 없습니다. 사진을 먼저 공유해 주세요.');
   files.sort((a, b) => a.getDateCreated() - b.getDateCreated());
 
+  const token = ScriptApp.getOAuthToken();
   const date = p.date || Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
   const name = '사진대지_' + date;
   const outF = folderByName(NAMES.outFolder);
@@ -91,7 +108,7 @@ function generate(p) {
     const [top, bot] = BOX[s];
     let bw = 0; for (let c = 2; c <= 8; c++) bw += sh.getColumnWidth(c);
     let bh = 0; for (let r = top; r <= bot; r++) bh += sh.getRowHeight(base + r);
-    const img = sh.insertImage(f.getBlob(), 2, base + top);
+    const img = sh.insertImage(photoBlob(f, token), 2, base + top);
     const ratio = Math.min((bw - 6) / img.getWidth(), (bh - 6) / img.getHeight());
     img.setWidth(Math.round(img.getWidth() * ratio));
     img.setHeight(Math.round(img.getHeight() * ratio));
@@ -109,7 +126,6 @@ function generate(p) {
   SpreadsheetApp.flush();
 
   const rows = pages * BLOCK;
-  const token = ScriptApp.getOAuthToken();
   const base = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export';
   const opt = { headers: { Authorization: 'Bearer ' + token } };
   const pdf = outF.createFile(UrlFetchApp.fetch(base + '?format=pdf&portrait=true&fitw=true&gridlines=false&gid=' + sh.getSheetId() + '&range=A1:I' + rows, opt).getBlob().setName(name + '.pdf'));
