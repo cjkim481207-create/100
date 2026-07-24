@@ -20,11 +20,11 @@
   table{width:100%;border-collapse:collapse}
   td,th{border:1px solid #333;font-size:12px;padding:4px 6px}
   th{background:#f0f0f0;width:56px;text-align:center;white-space:nowrap}
-  .ph{width:62%;height:200px;text-align:center;padding:2px}
-  .ph img{max-width:100%;max-height:196px}
+  .ph{width:62%;height:320px;text-align:center;padding:2px}
+  .ph img{max-width:100%;max-height:316px}
   .info input,.info textarea{width:100%;border:0;font:inherit;padding:2px;background:transparent}
   .info input:focus,.info textarea:focus{outline:1px solid #25a;background:#f5f8ff}
-  .info textarea{resize:none;height:80px}
+  .info textarea{resize:none;height:180px}
   .del{float:right;background:#d33;color:#fff;border:0;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px}
   .empty{max-width:800px;margin:30px auto;text-align:center;color:#888}
   @media print{
@@ -55,7 +55,7 @@
 
 <script>
 const items=[]; // {src, gong, loc, memo}
-const PER=3;    // 페이지당 사진 수
+const PER=2;    // 페이지당 사진 수
 function add(files){
   [...files].forEach(f=>{
     const r=new FileReader();
