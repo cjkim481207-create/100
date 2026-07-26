@@ -29,6 +29,14 @@
   header h1{margin:0;font-size:17px;letter-spacing:.02em}
   header p{margin:2px 0 0;font-size:12.5px;opacity:.85}
 
+  #inapp{display:none;background:#fdf3e3;border:1px solid #e0b872;color:#5c4212;
+         border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13.5px;line-height:1.55}
+  #inapp b{display:block;margin-bottom:2px}
+  #inapp .row{display:flex;gap:8px;margin-top:10px}
+  #inapp button{flex:1;padding:10px;font:inherit;font-size:13.5px;font-weight:700;
+                border:1px solid #b8863a;border-radius:7px;background:#b8863a;color:#fff;cursor:pointer}
+  #inapp button#copyUrl{background:transparent;color:#7a5a1c}
+
   .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
   .grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
   label{display:block;font-size:12px;color:var(--dim);letter-spacing:.04em;margin-bottom:3px}
@@ -76,6 +84,15 @@
 </header>
 
 <div class="wrap">
+  <div id="inapp">
+    <b>지금 다른 앱 안의 브라우저로 열려 있습니다.</b>
+    여기서는 카톡으로 바로 보내기가 막힙니다 — 크롬으로 열어 주세요.
+    <div class="row">
+      <button id="openChrome" type="button">크롬으로 열기</button>
+      <button id="copyUrl" type="button">주소 복사</button>
+    </div>
+  </div>
+
   <div class="panel">
     <div class="grid">
       <div style="grid-column:1/-1"><label for="f_site">현장명</label><input id="f_site"></div>

@@ -294,9 +294,13 @@ function shareNow(kind) {
   navigator.share({ files: [file], title: file.name })
     .then(() => { invalidate(); status('✅ 공유 완료'); })
     .catch(e => {
-      if (e.name === 'AbortError') status('');
-      else if (e.name === 'NotAllowedError') status('공유가 막혔습니다 — 아래 [저장만 하기]로 받아 첨부해 주세요');
-      else status('⚠️ 공유 실패: ' + e.name);
+      if (e.name === 'AbortError') { status(''); return; }
+      if (e.name === 'NotAllowedError') {
+        // 인앱 브라우저 등에서 공유가 차단된 경우 — 만든 파일은 저장해 준다
+        download(file, file.name);
+        $('inapp').style.display = 'block';
+        status('공유가 막혀 파일로 저장했습니다 · ' + file.name);
+      } else status('⚠️ 공유 실패: ' + e.name);
     });
   return true;
 }
@@ -319,6 +323,13 @@ async function share(kind) {
     } catch (e) {
       if (e.name === 'AbortError') { status(''); return; }
       if (e.name !== 'NotAllowedError') throw e;
+      if (inAppBrowser()) {          // 인앱 브라우저는 다시 눌러도 막히므로 바로 저장
+        download(file, file.name);
+        invalidate();
+        $('inapp').style.display = 'block';
+        status('공유가 막혀 파일로 저장했습니다 · ' + file.name);
+        return;
+      }
       // 파일 만드는 사이 터치 권한이 만료됨 → 버튼을 '지금 공유'로 바꿔 한 번 더 누르게 한다
       const b = shareBtn(kind);
       b.textContent = `${LABEL[kind]} 지금 공유 ▶`;
@@ -366,6 +377,28 @@ function busy(on, t) {
   if (t) status(t);
 }
 
+/** 네이버·카톡 등 앱 안의 브라우저인지 (여기서는 파일 공유가 막힘) */
+function inAppBrowser() {
+  const ua = navigator.userAgent;
+  return /NAVER|KAKAOTALK|DaumApps|Instagram|FBAN|FBAV|Line\//i.test(ua);
+}
+
+function setupInApp() {
+  if (!inAppBrowser()) return;
+  $('inapp').style.display = 'block';
+  const url = location.href.split('#')[0];
+  $('openChrome').addEventListener('click', () => {
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    location.href = ios
+      ? url.replace(/^https:/, 'googlechromes:')
+      : `intent://${location.host}${location.pathname}#Intent;scheme=https;package=com.android.chrome;end`;
+  });
+  $('copyUrl').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); status('주소를 복사했습니다 — 크롬에 붙여넣어 주세요'); }
+    catch (e) { status(url); }
+  });
+}
+
 /** 공유로 들어온 사진 받기 (서비스워커가 캐시에 넣어둠) */
 async function loadShared() {
   if (!('caches' in window)) return;
@@ -404,5 +437,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   $('btnPdf').addEventListener('click', () => save('pdf'));
   $('btnXlsx').addEventListener('click', () => save('xlsx'));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+  setupInApp();
   await loadShared();
 });
