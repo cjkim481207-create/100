@@ -49,13 +49,17 @@
   .del{position:absolute;top:6px;right:6px;width:26px;height:26px;border:0;border-radius:6px;
        background:transparent;color:var(--danger);font-size:15px;cursor:pointer}
 
-  #actions{display:none;gap:10px;position:sticky;bottom:0;padding:12px 0;
+  #actions{display:none;gap:10px;position:sticky;bottom:0;padding:12px 0 4px;
            background:linear-gradient(to top,var(--bg) 70%,transparent)}
   #actions button{flex:1;padding:15px;font:inherit;font-size:15.5px;font-weight:700;
                   border:1px solid var(--accent);border-radius:9px;cursor:pointer}
-  #btnXlsx{background:var(--accent);color:var(--accent-ink)}
-  #btnPdf{background:transparent;color:var(--accent)}
-  #actions button:disabled{opacity:.5}
+  #btnShareXlsx{background:var(--accent);color:var(--accent-ink)}
+  #btnSharePdf{background:transparent;color:var(--accent)}
+  #saves{display:none;gap:8px;align-items:center;justify-content:center;padding-bottom:8px}
+  #saves span{font-size:12px;color:var(--dim)}
+  #saves button{padding:6px 12px;font:inherit;font-size:12.5px;color:var(--dim);
+                background:transparent;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+  button:disabled{opacity:.5}
   #status{min-height:20px;font-size:13.5px;color:var(--dim);text-align:center;padding:2px 0}
 
   .sec{font-size:12px;color:var(--dim);letter-spacing:.08em;margin:18px 0 8px}
@@ -89,8 +93,13 @@
   <div id="empty">아직 사진이 없습니다. [사진 추가]를 누르거나 갤러리에서 공유하세요.</div>
 
   <div id="actions">
-    <button id="btnXlsx" type="button">엑셀(xlsx) 저장</button>
-    <button id="btnPdf" type="button">PDF 저장</button>
+    <button id="btnShareXlsx" type="button">엑셀 공유</button>
+    <button id="btnSharePdf" type="button">PDF 공유</button>
+  </div>
+  <div id="saves">
+    <span>저장만 하기</span>
+    <button id="btnXlsx" type="button">엑셀(xlsx)</button>
+    <button id="btnPdf" type="button">PDF</button>
   </div>
   <div id="status"></div>
 

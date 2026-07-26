@@ -36,11 +36,12 @@ async function addFiles(files) {
     } catch (e) { failed++; }
   }
   status(failed ? `⚠️ ${failed}장은 열 수 없어 건너뛰었습니다.` : '');
+  invalidate();
   render();
 }
 
-function del(i) { items.splice(i, 1); render(); }
-function set(i, k, v) { items[i][k] = v; schedule(); }
+function del(i) { items.splice(i, 1); invalidate(); render(); }
+function set(i, k, v) { items[i][k] = v; invalidate(); schedule(); }
 
 // 입력 중에는 미리보기만 다시 그린다 (목록을 다시 그리면 입력 포커스가 끊김)
 let timer = null;
@@ -52,6 +53,7 @@ function render() { renderList(); renderPreview(); }
 function renderList() {
   $('empty').style.display = items.length ? 'none' : 'block';
   $('actions').style.display = items.length ? 'flex' : 'none';
+  $('saves').style.display = items.length ? 'flex' : 'none';
 
   $('list').innerHTML = items.map((it, i) => `
     <div class="card">
@@ -172,21 +174,15 @@ function fmtDate(iso) {
   return `${+y}년 ${+m}월 ${+d}일`;
 }
 
-// ── PDF 저장 (브라우저에서 직접 생성) ──────────────────────────────────────
-async function savePdf() {
-  if (!items.length) return;
-  busy(true, 'PDF 만드는 중…');
-  try {
-    const pages = Math.ceil(items.length / PER), jpegs = [];
-    const cv = document.createElement('canvas');
-    for (let p = 0; p < pages; p++) {
-      drawPage(cv, p, 200);            // 글씨가 또렷하게 나오도록 200dpi
-      jpegs.push(await canvasJpeg(cv, 0.92));
-    }
-    download(new Blob([pdfBytes(jpegs, 595.28, 841.89)], { type: 'application/pdf' }), fileName('pdf'));
-    status('✅ PDF 저장 완료');
-  } catch (e) { status('⚠️ PDF 실패: ' + e.message); }
-  busy(false);
+// ── PDF 만들기 (브라우저에서 직접 생성) ────────────────────────────────────
+async function buildPdf() {
+  const pages = Math.ceil(items.length / PER), jpegs = [];
+  const cv = document.createElement('canvas');
+  for (let p = 0; p < pages; p++) {
+    drawPage(cv, p, 200);              // 글씨가 또렷하게 나오도록 200dpi
+    jpegs.push(await canvasJpeg(cv, 0.92));
+  }
+  return new Blob([pdfBytes(jpegs, 595.28, 841.89)], { type: 'application/pdf' });
 }
 
 function canvasJpeg(cv, q) {
@@ -242,27 +238,65 @@ function jpgSize(b) {
   return [0, 0];
 }
 
-// ── XLSX 저장 (서버에서 양식에 삽입) ───────────────────────────────────────
-async function saveXlsx() {
-  if (!items.length) return;
-  busy(true, '엑셀 만드는 중…');
-  try {
-    let payload = null;
-    for (const [max, q] of [[1400, 0.8], [1100, 0.72], [900, 0.65]]) {
-      payload = await Promise.all(items.map(it => shrink(it, max, q)));
-      const bytes = payload.reduce((s, p) => s + p.data.length, 0);
-      if (bytes < 3.2e6) break;
-    }
-    const res = await fetch('/api/xlsx', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site: $('f_site').value, date: $('f_date').value, items: payload }),
-    });
-    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.status);
-    download(await res.blob(), fileName('xlsx'));
-    status('✅ 엑셀 저장 완료');
-  } catch (e) { status('⚠️ 엑셀 실패: ' + e.message); }
+// ── XLSX 만들기 (서버가 양식 파일에 사진을 삽입) ───────────────────────────
+async function buildXlsx() {
+  let payload = null;
+  for (const [max, q] of [[1400, 0.8], [1100, 0.72], [900, 0.65]]) {
+    payload = await Promise.all(items.map(it => shrink(it, max, q)));
+    if (payload.reduce((s, p) => s + p.data.length, 0) < 3.2e6) break;
+  }
+  const res = await fetch('/api/xlsx', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ site: $('f_site').value, date: $('f_date').value, items: payload }),
+  });
+  if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.status);
+  return res.blob();
+}
+
+// ── 저장 / 공유 ────────────────────────────────────────────────────────────
+const MIME = { pdf: 'application/pdf', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+let ready = null;   // 만들어 둔 파일 {kind, file} — 공유 재시도·취소 후 재사용
+function invalidate() { ready = null; }
+
+async function makeFile(kind) {
+  if (ready && ready.kind === kind) return ready.file;
+  busy(true, kind === 'pdf' ? 'PDF 만드는 중…' : '엑셀 만드는 중…');
+  const blob = kind === 'pdf' ? await buildPdf() : await buildXlsx();
   busy(false);
+  return new File([blob], fileName(kind), { type: MIME[kind] });
+}
+
+async function save(kind) {
+  if (!items.length) return;
+  try {
+    const file = await makeFile(kind);
+    download(file, file.name);
+    status('✅ 저장 완료 · ' + file.name);
+  } catch (e) { busy(false); status('⚠️ 실패: ' + e.message); }
+}
+
+async function share(kind) {
+  if (!items.length) return;
+  try {
+    const file = await makeFile(kind);
+    if (!(navigator.canShare && navigator.canShare({ files: [file] }))) {
+      download(file, file.name);
+      status('이 브라우저는 파일 공유를 지원하지 않아 저장했습니다.');
+      return;
+    }
+    try {
+      await navigator.share({ files: [file], title: file.name });
+      ready = null;
+      status('✅ 공유 완료');
+    } catch (e) {
+      // 파일 만드는 동안 터치 권한이 만료된 경우 → 파일은 남겨두고 한 번 더 누르게 안내
+      ready = { kind, file };
+      if (e.name === 'NotAllowedError') status('준비됐습니다 — [공유]를 한 번 더 눌러주세요');
+      else if (e.name === 'AbortError') status('');
+      else throw e;
+    }
+  } catch (e) { busy(false); status('⚠️ 공유 실패: ' + e.message); }
 }
 
 async function shrink(it, max, q) {
@@ -288,7 +322,7 @@ function download(blob, filename) {
 }
 function status(t) { $('status').textContent = t; }
 function busy(on, t) {
-  $('btnPdf').disabled = on; $('btnXlsx').disabled = on;
+  ['btnPdf', 'btnXlsx', 'btnSharePdf', 'btnShareXlsx'].forEach(id => { $(id).disabled = on; });
   if (t) status(t);
 }
 
@@ -317,6 +351,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   ['f_site', 'f_loc', 'f_memo', 'f_date'].forEach(id => $(id).addEventListener('input', () => {
     if (id === 'f_site') localStorage.setItem('site', $(id).value);
     if (id === 'f_loc') localStorage.setItem('loc', $(id).value);
+    invalidate();
     schedule();
   }));
   // 입력값 초기화는 사진을 다 읽은 뒤에 (먼저 지우면 파일 데이터가 무효화됨)
@@ -324,8 +359,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     await addFiles([...e.target.files]);
     e.target.value = '';
   });
-  $('btnPdf').addEventListener('click', savePdf);
-  $('btnXlsx').addEventListener('click', saveXlsx);
+  $('btnSharePdf').addEventListener('click', () => share('pdf'));
+  $('btnShareXlsx').addEventListener('click', () => share('xlsx'));
+  $('btnPdf').addEventListener('click', () => save('pdf'));
+  $('btnXlsx').addEventListener('click', () => save('xlsx'));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
   await loadShared();
 });
