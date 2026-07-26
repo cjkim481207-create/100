@@ -1,6 +1,10 @@
 const { buildXlsx } = require('../lib/build.js');
 
 module.exports = async (req, res) => {
+  if (req.method === 'GET') {          // 앱이 미리 깨워두는 용도
+    res.status(200).json({ ok: true });
+    return;
+  }
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'POST만 지원합니다.' });
     return;

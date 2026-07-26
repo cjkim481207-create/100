@@ -38,6 +38,7 @@ async function addFiles(files) {
   status(failed ? `⚠️ ${failed}장은 열 수 없어 건너뛰었습니다.` : '');
   invalidate();
   render();
+  warmUp();
 }
 
 function del(i) { items.splice(i, 1); invalidate(); render(); }
@@ -242,7 +243,8 @@ function jpgSize(b) {
 async function buildXlsx() {
   let payload = null;
   for (const [max, q] of [[1400, 0.8], [1100, 0.72], [900, 0.65]]) {
-    payload = await Promise.all(items.map(it => shrink(it, max, q)));
+    payload = await Promise.all(items.map(async it => Object.assign(
+      { loc: it.loc, memo: it.memo, bigo: it.bigo }, await shrink(it, max, q))));
     if (payload.reduce((s, p) => s + p.data.length, 0) < 3.2e6) break;
   }
   const res = await fetch('/api/xlsx', {
@@ -257,11 +259,17 @@ async function buildXlsx() {
 // ── 저장 / 공유 ────────────────────────────────────────────────────────────
 const MIME = { pdf: 'application/pdf', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 let ready = null;   // 만들어 둔 파일 {kind, file} — 공유 재시도·취소 후 재사용
-function invalidate() { ready = null; }
+function invalidate() {
+  ready = null;
+  for (const k of ['pdf', 'xlsx']) {
+    const b = shareBtn(k);
+    if (b && b.classList.contains('rdy')) { b.classList.remove('rdy'); b.textContent = `${LABEL[k]} 공유`; }
+  }
+}
 
 async function makeFile(kind) {
   if (ready && ready.kind === kind) return ready.file;
-  busy(true, kind === 'pdf' ? 'PDF 만드는 중…' : '엑셀 만드는 중…');
+  busy(true, kind === 'pdf' ? 'PDF 만드는 중…' : '엑셀 만드는 중… (몇 초 걸립니다)');
   const blob = kind === 'pdf' ? await buildPdf() : await buildXlsx();
   busy(false);
   return new File([blob], fileName(kind), { type: MIME[kind] });
@@ -276,8 +284,26 @@ async function save(kind) {
   } catch (e) { busy(false); status('⚠️ 실패: ' + e.message); }
 }
 
+const shareBtn = kind => $(kind === 'pdf' ? 'btnSharePdf' : 'btnShareXlsx');
+const LABEL = { pdf: 'PDF', xlsx: '엑셀' };
+
+/** 준비된 파일을 곧바로 공유. await 없이 호출해야 브라우저가 공유창을 열어준다. */
+function shareNow(kind) {
+  if (!ready || ready.kind !== kind) return false;
+  const file = ready.file;
+  navigator.share({ files: [file], title: file.name })
+    .then(() => { invalidate(); status('✅ 공유 완료'); })
+    .catch(e => {
+      if (e.name === 'AbortError') status('');
+      else if (e.name === 'NotAllowedError') status('공유가 막혔습니다 — 아래 [저장만 하기]로 받아 첨부해 주세요');
+      else status('⚠️ 공유 실패: ' + e.name);
+    });
+  return true;
+}
+
 async function share(kind) {
   if (!items.length) return;
+  if (shareNow(kind)) return;                     // 이미 만들어 둔 파일이면 즉시 공유
   try {
     const file = await makeFile(kind);
     if (!(navigator.canShare && navigator.canShare({ files: [file] }))) {
@@ -285,21 +311,25 @@ async function share(kind) {
       status('이 브라우저는 파일 공유를 지원하지 않아 저장했습니다.');
       return;
     }
+    ready = { kind, file };
     try {
       await navigator.share({ files: [file], title: file.name });
-      ready = null;
+      invalidate();
       status('✅ 공유 완료');
     } catch (e) {
-      // 파일 만드는 동안 터치 권한이 만료된 경우 → 파일은 남겨두고 한 번 더 누르게 안내
-      ready = { kind, file };
-      if (e.name === 'NotAllowedError') status('준비됐습니다 — [공유]를 한 번 더 눌러주세요');
-      else if (e.name === 'AbortError') status('');
-      else throw e;
+      if (e.name === 'AbortError') { status(''); return; }
+      if (e.name !== 'NotAllowedError') throw e;
+      // 파일 만드는 사이 터치 권한이 만료됨 → 버튼을 '지금 공유'로 바꿔 한 번 더 누르게 한다
+      const b = shareBtn(kind);
+      b.textContent = `${LABEL[kind]} 지금 공유 ▶`;
+      b.classList.add('rdy');
+      status('파일 준비 완료 — 버튼을 한 번 더 눌러주세요');
     }
   } catch (e) { busy(false); status('⚠️ 공유 실패: ' + e.message); }
 }
 
 async function shrink(it, max, q) {
+  if (it.small && it.small.max === max && it.small.q === q) return it.small.payload;
   const r = Math.min(1, max / Math.max(it.w, it.h));
   const w = Math.round(it.w * r), h = Math.round(it.h * r);
   const cv = document.createElement('canvas');
@@ -308,7 +338,17 @@ async function shrink(it, max, q) {
   const jpg = await canvasJpeg(cv, q);
   let bin = '';
   for (const b of jpg) bin += String.fromCharCode(b);
-  return { loc: it.loc, memo: it.memo, bigo: it.bigo, w, h, data: btoa(bin) };
+  const payload = { w, h, data: btoa(bin) };
+  it.small = { max, q, payload };
+  return payload;
+}
+
+/** 사진을 미리 압축해 두고 서버도 깨워 둔다 (공유 버튼을 눌렀을 때 기다리지 않도록) */
+function warmUp() {
+  fetch('/api/xlsx', { method: 'GET' }).catch(() => {});
+  setTimeout(async () => {
+    for (const it of items) { try { await shrink(it, 1400, 0.8); } catch (e) { /* 나중에 다시 */ } }
+  }, 300);
 }
 
 // ── 공통 ───────────────────────────────────────────────────────────────────
