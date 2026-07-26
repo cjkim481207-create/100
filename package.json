@@ -1,0 +1,17 @@
+{
+  "name": "frame-inspection-board",
+  "version": "1.0.0",
+  "private": true,
+  "description": "건축팀 골조 검측 현황판 (웹 + 슬랙 연동)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "16.2.12",
+    "pg": "8.22.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  }
+}
