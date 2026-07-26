@@ -1,12 +1,18 @@
 /* 사진대지 — 양식과 동일한 레이아웃을 캔버스에 그려 미리보기·PDF로, 사진은 서버에서 xlsx로 */
 
 // ── 양식 치수 (템플릿 xlsx에서 그대로 가져옴) ──────────────────────────────
-const COLW = [17, 71, 71, 71, 71, 76, 71, 71, 17];              // A~I, 96dpi 픽셀
+const CHARW = [1.71, 9.43, 9.43, 9.43, 9.43, 10.14, 9.43, 9.43, 1.71];  // A~I 열 너비(문자 단위)
+const PX_PER_CHAR = 8;                  // 맑은 고딕 11pt 기준 1문자 = 8px (엑셀 환산)
+const COLW = CHARW.map(w => w * PX_PER_CHAR + 5);                       // 96dpi 픽셀
 const ROWH = [49.5, 27, 9.75, 21, 27, 27, 27, 27, 27, 27, 27, 27, 20.25, 9.75,
               27, 27, 7.5, 21, 27, 9.75, 27, 27, 27, 27, 36.75, 27, 20.25, 7.5, 27, 27]; // 1~30행, pt
-const BOX = [[4, 13], [18, 27]];        // 사진박스 행범위 (B~H열)
+const BOX = [[4, 13], [18, 27]];        // 사진박스 행범위 (테두리는 A~I열 전체)
 const INF = [[15, 16], [29, 30]];       // [위치·일자 행, 내용·비고 행]
 const PER = 2;                          // 페이지당 사진 수
+const INSET = 12;                       // 사진과 박스 테두리 사이 여백 (96dpi 픽셀)
+const MARGIN = { lr: 0.7086614, tb: 0.7480315 };   // 양식의 인쇄 여백 (inch)
+const F_TITLE = '"Malgun Gothic","맑은 고딕",sans-serif';
+const F_TABLE = '"Gulim","굴림","GulimChe","굴림체","Malgun Gothic",sans-serif';
 
 // X[n] = n번째 열의 시작 x, Y[r] = r번째 행의 끝 y (즉 시작은 Y[r-1])
 const X = [0, 0]; COLW.forEach(w => X.push(X[X.length - 1] + w));
@@ -83,28 +89,34 @@ function thumb(cv, it) {
   g.drawImage(it.bmp, (S - w) / 2, (S - h) / 2, w, h);
 }
 
-/** A4 한 장을 그린다. dpi=96 미리보기, 150 이상은 PDF용 */
+/** A4 한 장을 그린다 (엑셀 인쇄와 동일한 배치). dpi=96 미리보기, 200은 PDF용 */
 function drawPage(cv, page, dpi) {
-  const W = Math.round(8.2677 * dpi), H = Math.round(11.6929 * dpi), m = 0.35 * dpi;
+  const W = Math.round(8.2677 * dpi), H = Math.round(11.6929 * dpi);
   cv.width = W; cv.height = H;
   cv.style.width = '100%'; cv.style.height = 'auto';
   const g = cv.getContext('2d');
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
 
-  const K = Math.min((W - 2 * m) / SHEET_W, (H - 2 * m) / SHEET_H);
-  const ox = (W - SHEET_W * K) / 2, oy = (H - SHEET_H * K) / 2;
-  const px = v => ox + v * K, py = v => oy + v * K;
-  const pt = v => v * (4 / 3) * K;          // 글자 크기: pt → 캔버스 px
+  // 엑셀과 같이 100%를 넘겨 확대하지 않고, 인쇄영역 안에서 가로 가운데 정렬
+  const S = dpi / 72;                                   // pt → 캔버스 px
+  const sheetW = SHEET_W * 0.75, sheetH = SHEET_H * 0.75;   // 96dpi px → pt
+  const printW = (8.2677 - MARGIN.lr * 2) * 72, printH = (11.6929 - MARGIN.tb * 2) * 72;
+  const k = Math.min(1, printW / sheetW, printH / sheetH);
+  const ox = MARGIN.lr * 72 + (printW - sheetW * k) / 2, oy = MARGIN.tb * 72;
+
+  const u = v => v * 0.75 * k * S;         // 양식 픽셀(96dpi) → 캔버스 px
+  const px = v => (ox * S) + u(v), py = v => (oy * S) + u(v);
+  const fs = v => v * k * S;               // 글자 pt → 캔버스 px
 
   g.strokeStyle = '#000'; g.fillStyle = '#000';
-  g.lineWidth = Math.max(1, 0.9 * K);
+  g.lineWidth = Math.max(1, 0.75 * k * S);
   g.textBaseline = 'middle';
 
-  // 제목 / 현장명
-  g.font = `bold ${pt(20)}px ${FONT}`;
+  // 제목 (맑은 고딕 20pt 굵게) / 현장명 (11pt)
+  g.font = `bold ${fs(20)}px ${F_TITLE}`;
   g.textAlign = 'center';
   g.fillText('사  진  대  지', px((X[1] + X[10]) / 2), py((Y[0] + Y[1]) / 2));
-  g.font = `${pt(10.5)}px ${FONT}`;
+  g.font = `${fs(11)}px ${F_TITLE}`;
   g.textAlign = 'left';
   g.fillText('현장명 : ' + $('f_site').value, px(X[1]), py((Y[1] + Y[2]) / 2));
 
@@ -113,40 +125,41 @@ function drawPage(cv, page, dpi) {
     const it = items[page * PER + s];
     const [top, bot] = BOX[s];
 
-    // 사진박스 (B~H열) + 사진 가운데 정렬
-    const bx = px(X[2]), by = py(Y[top - 1]), bw = (X[9] - X[2]) * K, bh = (Y[bot] - Y[top - 1]) * K;
+    // 사진박스: 테두리는 A~I열 전체 (표와 같은 폭), 사진은 안쪽에 가운데 정렬
+    const bx = px(X[1]), by = py(Y[top - 1]);
+    const bw = u(X[10] - X[1]), bh = u(Y[bot] - Y[top - 1]);
     g.strokeRect(bx, by, bw, bh);
     if (it) {
-      const r = Math.min((bw - 4) / it.w, (bh - 4) / it.h), w = it.w * r, h = it.h * r;
+      const pad = u(INSET);
+      const r = Math.min((bw - pad * 2) / it.w, (bh - pad * 2) / it.h);
+      const w = it.w * r, h = it.h * r;
       g.drawImage(it.bmp, bx + (bw - w) / 2, by + (bh - h) / 2, w, h);
     }
 
-    // 위치·일자 / 내용·비고 표
+    // 위치·일자 / 내용·비고 표 (굴림체 11pt)
     const [rInfo, rMemo] = INF[s];
-    row(g, rInfo, '위 치', it ? it.loc : '', '일 자', it ? dateText : '', px, py, pt);
-    row(g, rMemo, '내 용', it ? it.memo : '', '비 고', it ? it.bigo : '', px, py, pt);
+    row(g, rInfo, '위 치', it ? it.loc : '', '일 자', it ? dateText : '', px, py, fs);
+    row(g, rMemo, '내 용', it ? it.memo : '', '비 고', it ? it.bigo : '', px, py, fs);
   }
 }
 
-const FONT = '"Malgun Gothic","맑은 고딕","Noto Sans KR",sans-serif';
-
-function row(g, r, lab1, val1, lab2, val2, px, py, pt) {
+function row(g, r, lab1, val1, lab2, val2, px, py, fs) {
   const y0 = py(Y[r - 1]), y1 = py(Y[r]);
   const cells = [
-    [px(X[1]), px(X[3]), lab1, true],
-    [px(X[3]), px(X[6]), val1, false],
-    [px(X[6]), px(X[7]), lab2, true],
-    [px(X[7]), px(X[10]), val2, false],
+    [px(X[1]), px(X[3]), lab1],
+    [px(X[3]), px(X[6]), val1],
+    [px(X[6]), px(X[7]), lab2],
+    [px(X[7]), px(X[10]), val2],
   ];
-  for (const [x0, x1, text, isLabel] of cells) {
+  for (const [x0, x1, text] of cells) {
     g.strokeRect(x0, y0, x1 - x0, y1 - y0);
     if (!text) continue;
-    let size = pt(10.5);
-    g.font = `bold ${size}px ${FONT}`;
-    const max = (x1 - x0) - pt(6);
-    while (g.measureText(text).width > max && size > pt(5)) {
-      size -= pt(0.5);
-      g.font = `bold ${size}px ${FONT}`;
+    let size = fs(11);
+    g.font = `${size}px ${F_TABLE}`;
+    const max = (x1 - x0) - fs(5);
+    while (g.measureText(text).width > max && size > fs(5)) {
+      size -= fs(0.4);
+      g.font = `${size}px ${F_TABLE}`;
     }
     g.textAlign = 'center';
     g.fillText(text, (x0 + x1) / 2, (y0 + y1) / 2);
@@ -167,8 +180,8 @@ async function savePdf() {
     const pages = Math.ceil(items.length / PER), jpegs = [];
     const cv = document.createElement('canvas');
     for (let p = 0; p < pages; p++) {
-      drawPage(cv, p, 150);
-      jpegs.push(await canvasJpeg(cv, 0.9));
+      drawPage(cv, p, 200);            // 글씨가 또렷하게 나오도록 200dpi
+      jpegs.push(await canvasJpeg(cv, 0.92));
     }
     download(new Blob([pdfBytes(jpegs, 595.28, 841.89)], { type: 'application/pdf' }), fileName('pdf'));
     status('✅ PDF 저장 완료');
