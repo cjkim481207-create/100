@@ -14,7 +14,7 @@ from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.utils.units import pixels_to_EMU
 from PIL import Image
 
-TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "사진대지_양식.xlsx")
+TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "template.xlsx")
 BLOCK = 30            # 1페이지 = 30행
 BOXES = [(4, 13), (18, 27)]   # 페이지 내 사진박스 (시작행, 끝행), B~H열
 INFO = [(15, 16), (29, 30)]   # 위치/일자 행, 내용/비고 행
