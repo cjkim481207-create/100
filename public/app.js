@@ -21,9 +21,43 @@ const SHEET_W = X[10], SHEET_H = Y[30];
 
 const items = [];   // {bmp, w, h, loc, memo, bigo}
 const $ = id => document.getElementById(id);
+// 시크릿 모드·저장공간 부족에서도 예외로 앱이 멈추지 않게
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 무시 */ } },
+};
 const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
 // ── 사진 추가 ──────────────────────────────────────────────────────────────
+const MAX_SRC = 1600;   // 원본을 이 크기로 줄여 보관 (사진이 많아도 폰 메모리가 버티도록)
+
+/** 기기·브라우저마다 다른 이미지 읽기 방식을 차례로 시도 */
+async function loadImage(f) {
+  if (typeof createImageBitmap === 'function') {
+    try { return await createImageBitmap(f, { imageOrientation: 'from-image' }); } catch (e) { /* 아래로 */ }
+    try { return await createImageBitmap(f); } catch (e) { /* 아래로 */ }
+  }
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(f), im = new Image();
+    im.onload = () => { URL.revokeObjectURL(url); res(im); };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('read')); };
+    im.src = url;
+  });
+}
+
+async function loadPhoto(f) {
+  const src = await loadImage(f);
+  const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
+  if (!w || !h) throw new Error('empty');
+  const r = Math.min(1, MAX_SRC / Math.max(w, h));
+  if (r === 1) return { bmp: src, w, h };
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(w * r); cv.height = Math.round(h * r);
+  cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
+  if (src.close) src.close();
+  return { bmp: cv, w: cv.width, h: cv.height };
+}
+
 async function addFiles(files) {
   const list = [...files].filter(f => f.type.startsWith('image/'));
   if (!list.length) return;
@@ -31,8 +65,8 @@ async function addFiles(files) {
   let failed = 0;
   for (const f of list) {
     try {
-      const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
-      items.push({ bmp, w: bmp.width, h: bmp.height, loc: $('f_loc').value, memo: $('f_memo').value, bigo: '' });
+      const p = await loadPhoto(f);
+      items.push({ ...p, loc: $('f_loc').value, memo: $('f_memo').value, bigo: '' });
     } catch (e) { failed++; }
   }
   status(failed ? `⚠️ ${failed}장은 열 수 없어 건너뛰었습니다.` : '');
@@ -247,6 +281,9 @@ async function buildXlsx() {
       { loc: it.loc, memo: it.memo, bigo: it.bigo }, await shrink(it, max, q))));
     if (payload.reduce((s, p) => s + p.data.length, 0) < 3.2e6) break;
   }
+  if (payload.reduce((s, p) => s + p.data.length, 0) > 3.6e6) {
+    throw new Error(`사진이 너무 많습니다 (${items.length}장) — 15장쯤으로 나눠서 만들어 주세요`);
+  }
   const res = await fetch('/api/xlsx', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -419,11 +456,11 @@ window.set = set; window.del = del;
 window.addEventListener('DOMContentLoaded', async () => {
   const kst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   $('f_date').value = kst;
-  $('f_site').value = localStorage.getItem('site') || '구리갈매역세권 A-2BL 아파트 건설공사 3공구';
-  $('f_loc').value = localStorage.getItem('loc') || '';
+  $('f_site').value = store.get('site') || '구리갈매역세권 A-2BL 아파트 건설공사 3공구';
+  $('f_loc').value = store.get('loc') || '';
   ['f_site', 'f_loc', 'f_memo', 'f_date'].forEach(id => $(id).addEventListener('input', () => {
-    if (id === 'f_site') localStorage.setItem('site', $(id).value);
-    if (id === 'f_loc') localStorage.setItem('loc', $(id).value);
+    if (id === 'f_site') store.set('site', $(id).value);
+    if (id === 'f_loc') store.set('loc', $(id).value);
     invalidate();
     schedule();
   }));
