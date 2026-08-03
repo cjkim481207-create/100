@@ -44,9 +44,24 @@
 양식은 코드가 아니라 `templates/forms.json` 에 정의돼 있고, 앱 화면 위쪽에서 골라 쓴다
 (양식이 1개면 선택칸은 숨겨진다).
 
-**새 양식 추가하기**
-1. 양식 엑셀 파일을 `templates/` 에 넣는다 (예: `templates/lh-daeji.xlsx`)
-2. `templates/forms.json` 에 항목을 하나 추가한다
+**새 양식 추가하기 (자동)**
+
+```bash
+node tools/add-form.js templates/lh-daeji.xlsx --name "LH 사진대지"
+node tools/add-form.js templates/lh-daeji.xlsx --name "LH 사진대지" --dry   # 등록 없이 인식 결과만 확인
+```
+
+양식 파일을 `templates/` 에 넣고 위 명령을 실행하면, 사진칸·항목칸·열 너비·행 높이·인쇄 여백을
+읽어 `templates/forms.json` 에 등록한다. 인식 결과를 아래처럼 보여주므로 맞는지 확인하면 된다.
+
+```
+사진 1칸  : 4~13행 / A~I열, 항목 15,16행 [loc, date, memo, bigo]
+```
+
+같은 `--id` 로 다시 실행하면 갱신된다. 인식이 어긋나면 `--block 30`, `--px 7`, `--inset 8` 로
+바로잡거나 forms.json 을 직접 손보면 된다.
+
+**직접 쓰는 경우의 형식**
 
 ```jsonc
 {
