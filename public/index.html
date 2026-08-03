@@ -37,6 +37,13 @@
                 border:1px solid #b8863a;border-radius:7px;background:#b8863a;color:#fff;cursor:pointer}
   #inapp button#copyUrl{background:transparent;color:#7a5a1c}
 
+  #tabs{display:none;gap:6px;overflow-x:auto;padding:0 12px 10px;max-width:760px;margin:0 auto;
+        -webkit-overflow-scrolling:touch}
+  #tabs .tab{flex:none;padding:9px 14px;font:inherit;font-size:13.5px;white-space:nowrap;cursor:pointer;
+             border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--dim)}
+  #tabs .tab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+  #tabs .tab.edit{padding:9px 12px}
+
   .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
   .grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
   label{display:block;font-size:12px;color:var(--dim);letter-spacing:.04em;margin-bottom:3px}
@@ -85,6 +92,8 @@
   <p>사진을 넣으면 현장 양식에 맞춰 엑셀·PDF로 만들어 줍니다</p>
 </header>
 
+<div id="tabs"></div>
+
 <div class="wrap">
   <div id="inapp">
     <b>지금 다른 앱 안의 브라우저로 열려 있습니다.</b>
@@ -97,15 +106,10 @@
 
   <div class="panel">
     <div class="grid">
-      <div style="grid-column:1/-1;display:none" id="formRow">
-        <label for="f_form">양식</label>
-        <select id="f_form"></select>
-      </div>
       <div style="grid-column:1/-1"><label for="f_site">현장명</label><input id="f_site"></div>
-      <div><label for="f_loc">위치 (새 사진 기본값)</label><input id="f_loc" placeholder="구리갈매A-2BL 현장내"></div>
-      <div><label for="f_memo">내용 (새 사진 기본값)</label><input id="f_memo" placeholder="가배수로 정리"></div>
       <div><label for="f_date">일자</label><input id="f_date" type="date"></div>
     </div>
+    <div class="grid" id="defaults" style="margin-top:10px"></div>
     <label class="pick">사진 추가 (여러 장 선택 가능)
       <input id="pick" type="file" accept="image/*" multiple hidden>
     </label>

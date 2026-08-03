@@ -22,10 +22,18 @@ const FIELDS = [
   [/^(일자|날짜|촬영일|촬영일자|일 자)$/, 'date'],
   [/^(비고|비 고)$/, 'bigo'],
 ];
+const LABEL_RE = /^[가-힣A-Za-z][가-힣A-Za-z0-9()\/·]{0,9}$/;
 const fieldOf = text => {
   const t = String(text).replace(/\s+/g, '');
   for (const [re, f] of FIELDS) if (re.test(t)) return f;
-  return null;
+  return LABEL_RE.test(t) ? t : null;      // 모르는 항목명도 그대로 입력칸으로
+};
+const TITLE_RE = /(사진대지|사진첩|사진목록)/;
+const sheetHasTitle = ws => {
+  for (let r = 1; r <= Math.min(ws.rowCount, 40); r++)
+    for (let c = 1; c <= 3; c++)
+      if (TITLE_RE.test(textOf(ws.getCell(r, c).value).replace(/\s+/g, ''))) return true;
+  return false;
 };
 const textOf = v => (v && typeof v === 'object' && v.richText)
   ? v.richText.map(r => r.text).join('') : (v == null ? '' : String(v));
@@ -39,33 +47,53 @@ function parseMerges(ws) {
 
 function analyze(file, opt) {
   return new ExcelJS.Workbook().xlsx.readFile(file).then(wb => {
-    const ws = wb.worksheets[0];
+    const ws = opt.sheet
+      ? wb.worksheets.find(w => w.name === opt.sheet)
+      : (wb.worksheets.find(w => sheetHasTitle(w)) || wb.worksheets[0]);
+    if (!ws) throw new Error(`시트를 찾지 못했습니다: ${opt.sheet || '(자동)'}`);
     const merges = parseMerges(ws);
 
-    // 1) 제목: 1행의 가로로 긴 병합 → 표 전체 너비도 여기서 얻는다
-    const title = merges.find(m => m.r1 === 1 && m.c2 - m.c1 >= 3);
-    if (!title) throw new Error('제목 행(1행의 병합)을 찾지 못했습니다. --cols 로 직접 지정해 주세요.');
+    // 1) 제목 행: 가로로 긴 병합 중 '사진대지' 같은 제목이 든 칸 (문서 머리글 아래일 수 있다)
+    const titles = merges
+      .filter(m => m.c2 - m.c1 >= 3 && m.r1 === m.r2 && TITLE_RE.test(textOf(ws.getCell(m.r1, m.c1).value).replace(/\s+/g, '')))
+      .sort((a, b) => a.r1 - b.r1);
+    const title = opt.start ? titles.find(t => t.r1 === opt.start) : titles[0];
+    if (!title) throw new Error('제목 칸(예: "사 진 대 지")을 찾지 못했습니다.');
     const lastCol = title.c2;
-    const titleText = textOf(ws.getCell(1, title.c1).value);
+    const titleText = textOf(ws.getCell(title.r1, title.c1).value);
+    const blockStart = title.r1;
 
-    // 2) 1페이지 행 수: 같은 제목이 다시 나오는 행 간격
-    let block = opt.block || 0;
-    if (!block) {
-      for (let r = 2; r <= ws.rowCount; r++) {
-        if (textOf(ws.getCell(r, title.c1).value) === titleText) { block = r - 1; break; }
-      }
-    }
+    // 2) 1페이지 행 수: 같은 제목이 다시 나오는 간격
+    const same = titles.filter(t => textOf(ws.getCell(t.r1, t.c1).value) === titleText).map(t => t.r1);
+    let block = opt.block || (same.length > 1 ? same[1] - same[0] : 0);
     if (!block) throw new Error('1페이지 행 수를 찾지 못했습니다. --block 30 처럼 지정해 주세요.');
+    const blockEnd = blockStart + block - 1;
 
     // 3) 열 너비 · 행 높이
     const cols = [];
     for (let c = 1; c <= lastCol; c++) cols.push(ws.getColumn(c).width || 8.43);
     const rows = [];
-    for (let r = 1; r <= block; r++) rows.push(ws.getRow(r).height || 16.5);
+    for (let r = 1; r <= blockEnd; r++) rows.push(ws.getRow(r).height || 16.5);
+
+    // 문서 머리글 (블록 위쪽 행들 — 첫 장에만 나온다)
+    let header = null;
+    if (blockStart > 1) {
+      const cells = [];
+      for (let r = 1; r < blockStart; r++) {
+        for (let c = 1; c <= lastCol; c++) {
+          const t = textOf(ws.getCell(r, c).value);
+          if (!t.trim() || /현장명|공사명/.test(t)) continue;
+          const m = merges.find(x => x.r1 === r && x.c1 === c);
+          cells.push({ row: r, cols: [c, m ? Math.min(m.c2, lastCol) : c], text: t,
+                       size: ws.getCell(r, c).font?.size || 11, bold: !!(ws.getCell(r, c).font || {}).bold });
+        }
+      }
+      header = { rows: [1, blockStart - 1], cells };
+    }
 
     // 4) 현장명 행
     let site = null;
-    for (let r = 2; r <= block; r++) {
+    for (let r = 1; r <= blockEnd; r++) {
       const t = textOf(ws.getCell(r, 1).value);
       if (/현장명|공사명/.test(t)) {
         const m = /^([^:：]*[:：]\s*)/.exec(t);
@@ -74,9 +102,12 @@ function analyze(file, opt) {
       }
     }
 
-    // 5) 사진칸: 세로로 큰 병합 영역
+    // 5) 사진칸: 블록 안의 '비어 있는 큰 병합' (여러 행짜리 또는 한 행이 아주 높은 것)
+    const heightOf = m => { let h = 0; for (let r = m.r1; r <= m.r2; r++) h += ws.getRow(r).height || 16.5; return h; };
     const boxes = merges
-      .filter(m => m.r2 <= block && m.r2 - m.r1 >= 4 && m.c2 - m.c1 >= 2)
+      .filter(m => m.r1 >= blockStart && m.r2 <= blockEnd && m.c2 - m.c1 >= 2
+                && !textOf(ws.getCell(m.r1, m.c1).value).trim()
+                && (m.r2 - m.r1 >= 4 || heightOf(m) >= 100))
       .sort((a, b) => a.r1 - b.r1);
     if (!boxes.length) throw new Error('사진칸(큰 병합 영역)을 찾지 못했습니다.');
 
@@ -104,7 +135,7 @@ function analyze(file, opt) {
     };
 
     const slots = boxes.map((box, i) => {
-      const until = boxes[i + 1] ? boxes[i + 1].r1 - 1 : block;
+      const until = boxes[i + 1] ? boxes[i + 1].r1 - 1 : blockEnd;
       const tableRows = [];
       for (let r = box.r2 + 1; r <= until; r++) {
         const regions = rowRegions(r);
@@ -130,14 +161,17 @@ function analyze(file, opt) {
       id: opt.id,
       name: opt.name,
       template: path.basename(file),
+      sheet: ws.name,
       block,
+      blockStart,
+      header,
       perPage: slots.length,
       pxPerChar: opt.px || 8,
       cols, rows,
       margins: { lr: m ? m.left : 0.7086614, tb: m ? m.top : 0.7480315 },
-      title: { row: 1, cols: [title.c1, title.c2], text: titleText,
-               size: ws.getCell(1, title.c1).font?.size || 20,
-               bold: !!(ws.getCell(1, title.c1).font || {}).bold },
+      title: { row: blockStart, cols: [title.c1, title.c2], text: titleText,
+               size: ws.getCell(blockStart, title.c1).font?.size || 20,
+               bold: !!(ws.getCell(blockStart, title.c1).font || {}).bold },
       site,
       photoInset: opt.inset || 12,
       tableSize: (label && ws.getCell(slots[0].rows[0].row, label.cols[0]).font?.size) || 11,
@@ -154,9 +188,9 @@ function main() {
     process.exit(1);
   }
   const opt = { dry: args.includes('--dry') };
-  for (const k of ['name', 'id', 'block', 'px', 'inset']) {
+  for (const k of ['name', 'id', 'block', 'px', 'inset', 'sheet', 'start']) {
     const i = args.indexOf('--' + k);
-    if (i >= 0) opt[k] = ['block', 'px', 'inset'].includes(k) ? +args[i + 1] : args[i + 1];
+    if (i >= 0) opt[k] = ['block', 'px', 'inset', 'start'].includes(k) ? +args[i + 1] : args[i + 1];
   }
   opt.id = opt.id || path.basename(file, '.xlsx').replace(/[^a-zA-Z0-9_-]/g, '') || 'form';
   opt.name = opt.name || path.basename(file, '.xlsx');
@@ -165,7 +199,9 @@ function main() {
     console.log(`양식: ${def.name} (${def.id})`);
     console.log(`  제목      : "${def.title.text}"  (${def.title.size}pt${def.title.bold ? ' 굵게' : ''})`);
     console.log(`  현장명 행  : ${def.site ? def.site.row + '행 "' + def.site.prefix + '"' : '없음'}`);
-    console.log(`  1페이지    : ${def.block}행, 사진 ${def.perPage}장`);
+    console.log(`  시트      : ${def.sheet}`);
+    console.log(`  1페이지    : ${def.blockStart}행부터 ${def.block}행, 사진 ${def.perPage}장` +
+                (def.header ? ` (머리글 ${def.header.rows[0]}~${def.header.rows[1]}행)` : ''));
     console.log(`  표 너비    : A~${colName(def.cols.length)}열`);
     def.slots.forEach((s, i) => {
       const items = s.rows.flatMap(r => r.cells.filter(c => c.field).map(c => c.field));

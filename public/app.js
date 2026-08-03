@@ -2,18 +2,40 @@
 
 let FORM = null;                 // 현재 선택된 양식 정의
 let FORMS = [];                  // 사용 가능한 양식 목록
+let FIELDS = [];                 // 이 양식이 요구하는 사진별 입력 항목
 let COLW = [], X = [], Y = [], SHEET_W = 0, SHEET_H = 0;
 const F_TITLE = '"Malgun Gothic","맑은 고딕",sans-serif';
 const F_TABLE = '"Gulim","굴림","GulimChe","굴림체","Malgun Gothic",sans-serif';
 
+/** 양식이 요구하는 입력 항목 (일자는 위쪽 날짜칸을 쓰므로 제외) */
+function fieldDefs(form) {
+  const out = [], seen = {};
+  for (const slot of form.slots) {
+    for (const line of slot.rows) {
+      let label = '';
+      for (const cell of line.cells) {
+        if (cell.label) label = cell.label;
+        else if (cell.field && cell.field !== 'date' && !seen[cell.field]) {
+          seen[cell.field] = 1;
+          out.push({ key: cell.field, label: (label || cell.field).replace(/\s+/g, ' ').trim() });
+        }
+      }
+    }
+  }
+  return out;
+}
+
 /** 선택한 양식의 치수를 화면 좌표로 미리 계산 */
 function useForm(form) {
   FORM = form;
+  FIELDS = fieldDefs(form);
   COLW = form.cols.map(w => w * (form.pxPerChar || 8) + 5);          // 96dpi 픽셀
   X = [0, 0]; COLW.forEach(w => X.push(X[X.length - 1] + w));        // X[n] = n번째 열 시작
   Y = [0]; form.rows.forEach(h => Y.push(Y[Y.length - 1] + h * 4 / 3));  // Y[r] = r행 끝
   SHEET_W = X[X.length - 1]; SHEET_H = Y[Y.length - 1];
 }
+const blockStart = () => FORM.blockStart || 1;
+const blockTop = () => Y[blockStart() - 1];        // 머리글 높이
 
 const items = [];   // {bmp, w, h, loc, memo, bigo}
 const $ = id => document.getElementById(id);
@@ -62,7 +84,9 @@ async function addFiles(files) {
   for (const f of list) {
     try {
       const p = await loadPhoto(f);
-      items.push({ ...p, loc: $('f_loc').value, memo: $('f_memo').value, bigo: '' });
+      const v = {};
+      for (const fd of FIELDS) v[fd.key] = ($('d_' + fd.key) || {}).value || '';
+      items.push({ ...p, v });
     } catch (e) { failed++; }
   }
   status(failed ? `⚠️ ${failed}장은 열 수 없어 건너뛰었습니다.` : '');
@@ -72,14 +96,14 @@ async function addFiles(files) {
 }
 
 function del(i) { items.splice(i, 1); invalidate(); render(); }
-function set(i, k, v) { items[i][k] = v; invalidate(); schedule(); }
+function set(i, k, v) { items[i].v[k] = v; invalidate(); schedule(); }
 
 // 입력 중에는 미리보기만 다시 그린다 (목록을 다시 그리면 입력 포커스가 끊김)
 let timer = null;
 function schedule() { clearTimeout(timer); timer = setTimeout(renderPreview, 300); }
 
 // ── 화면 그리기 ────────────────────────────────────────────────────────────
-function render() { renderList(); renderPreview(); }
+function render() { renderDefaults(); renderList(); renderPreview(); }
 
 function renderList() {
   $('empty').style.display = items.length ? 'none' : 'block';
@@ -91,9 +115,8 @@ function renderList() {
       <canvas class="thumb" data-thumb="${i}"></canvas>
       <div class="fields">
         <div class="no">사진 ${i + 1}</div>
-        <input value="${esc(it.loc)}" placeholder="위치" oninput="set(${i},'loc',this.value)">
-        <input value="${esc(it.memo)}" placeholder="내용" oninput="set(${i},'memo',this.value)">
-        <input value="${esc(it.bigo)}" placeholder="비고" oninput="set(${i},'bigo',this.value)">
+        ${FIELDS.map(f => `<input value="${esc(it.v[f.key])}" placeholder="${esc(f.label)}"
+           oninput="set(${i},'${esc(f.key)}',this.value)">`).join('')}
       </div>
       <button class="del" onclick="del(${i})" aria-label="삭제">✕</button>
     </div>`).join('');
@@ -138,8 +161,9 @@ function drawPage(cv, page, dpi) {
   const k = Math.min(1, printW / sheetW, printH / sheetH);
   const ox = m.lr * 72 + (printW - sheetW * k) / 2, oy = m.tb * 72;
 
-  const u = v => v * 0.75 * k * S;         // 양식 픽셀(96dpi) → 캔버스 px
-  const px = v => (ox * S) + u(v), py = v => (oy * S) + u(v);
+  const top = page === 0 ? 0 : blockTop();   // 2장부터는 머리글을 빼고 블록부터
+  const u = v => v * 0.75 * k * S;           // 양식 픽셀(96dpi) → 캔버스 px
+  const px = v => (ox * S) + u(v), py = v => (oy * S) + u(v - top);
   const fs = v => v * k * S;               // 글자 pt → 캔버스 px
   const last = X.length - 1;
 
@@ -147,6 +171,14 @@ function drawPage(cv, page, dpi) {
   g.lineWidth = Math.max(1, 0.75 * k * S);
   g.textBaseline = 'middle';
 
+  if (page === 0 && FORM.header) {
+    for (const c of FORM.header.cells) {
+      g.font = `${c.bold ? 'bold ' : ''}${fs(c.size || 11)}px ${F_TITLE}`;
+      g.textAlign = 'left';
+      g.fillText(c.text, px(X[c.cols[0]]), py((Y[c.row - 1] + Y[c.row]) / 2));
+    }
+  }
+  const st0 = FORM.site;
   const t = FORM.title;
   if (t) {
     g.font = `${t.bold ? 'bold ' : ''}${fs(t.size || 20)}px ${F_TITLE}`;
@@ -154,7 +186,7 @@ function drawPage(cv, page, dpi) {
     g.fillText(t.text, px((X[t.cols[0]] + X[t.cols[1] + 1]) / 2), py((Y[t.row - 1] + Y[t.row]) / 2));
   }
   const st = FORM.site;
-  if (st) {
+  if (st && (page === 0 || st.row >= blockStart())) {
     g.font = `${fs(st.size || 11)}px ${F_TITLE}`;
     g.textAlign = 'left';
     g.fillText((st.prefix || '') + $('f_site').value, px(X[st.col]), py((Y[st.row - 1] + Y[st.row]) / 2));
@@ -163,7 +195,7 @@ function drawPage(cv, page, dpi) {
   const dateText = fmtDate($('f_date').value);
   FORM.slots.forEach((slot, s) => {
     const it = items[page * FORM.perPage + s];
-    const val = { loc: it && it.loc, memo: it && it.memo, bigo: it && it.bigo, date: it && dateText };
+    const val = Object.assign({}, it && it.v, { date: it ? dateText : '' });
 
     // 사진박스 + 사진 가운데 정렬
     const [r0, r1] = slot.box.rows, [c0, c1] = slot.box.cols;
@@ -274,7 +306,7 @@ async function buildXlsx() {
   let payload = null;
   for (const [max, q] of [[1400, 0.8], [1100, 0.72], [900, 0.65]]) {
     payload = await Promise.all(items.map(async it => Object.assign(
-      { loc: it.loc, memo: it.memo, bigo: it.bigo }, await shrink(it, max, q))));
+      { fields: it.v }, await shrink(it, max, q))));
     if (payload.reduce((s, p) => s + p.data.length, 0) < 3.2e6) break;
   }
   if (payload.reduce((s, p) => s + p.data.length, 0) > 3.6e6) {
@@ -448,6 +480,37 @@ async function loadShared() {
   if (files.length) await addFiles(files);
 }
 
+const formName = f => store.get('name:' + f.id) || f.name;
+
+function renderTabs() {
+  const bar = $('tabs');
+  bar.innerHTML = FORMS.map(f => `
+    <button class="tab${f.id === FORM.id ? ' on' : ''}" data-id="${esc(f.id)}">${esc(formName(f))}</button>`).join('')
+    + `<button class="tab edit" id="tabEdit" title="탭 이름 바꾸기">✎</button>`;
+  bar.querySelectorAll('.tab[data-id]').forEach(b => b.addEventListener('click', () => selectForm(b.dataset.id)));
+  $('tabEdit').addEventListener('click', renameTab);
+  const on = bar.querySelector('.tab.on');
+  if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+
+function selectForm(id) {
+  if (id === FORM.id) return;
+  store.set('form', id);
+  useForm(FORMS.find(f => f.id === id));
+  invalidate();
+  renderTabs();
+  render();
+}
+
+function renameTab() {
+  const cur = formName(FORM);
+  const name = prompt('탭 이름', cur);
+  if (name === null) return;
+  const t = name.trim();
+  if (t) store.set('name:' + FORM.id, t); else store.set('name:' + FORM.id, FORM.name);
+  renderTabs();
+}
+
 async function loadForms() {
   let list = null;
   try {
@@ -458,18 +521,19 @@ async function loadForms() {
   if (!list || !list.length) throw new Error('양식 정보를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
 
   FORMS = list;
-  const sel = $('f_form');
-  sel.innerHTML = list.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('');
   const saved = store.get('form');
-  sel.value = list.some(f => f.id === saved) ? saved : list[0].id;
-  $('formRow').style.display = list.length > 1 ? '' : 'none';
-  useForm(list.find(f => f.id === sel.value));
-  sel.addEventListener('change', () => {
-    store.set('form', sel.value);
-    useForm(FORMS.find(f => f.id === sel.value));
-    invalidate();
-    render();
-  });
+  useForm(list.find(f => f.id === saved) || list[0]);
+  $('tabs').style.display = list.length > 1 ? 'flex' : 'none';
+  renderTabs();
+}
+
+/** 양식이 요구하는 항목의 '기본값' 입력칸 (사진 추가 때 자동으로 채워진다) */
+function renderDefaults() {
+  $('defaults').innerHTML = FIELDS.map(f => `
+    <div><label for="d_${esc(f.key)}">${esc(f.label)} (새 사진 기본값)</label>
+      <input id="d_${esc(f.key)}" value="${esc(store.get('d:' + FORM.id + ':' + f.key) || '')}"></div>`).join('');
+  FIELDS.forEach(f => $('d_' + f.key).addEventListener('input', e =>
+    store.set('d:' + FORM.id + ':' + f.key, e.target.value)));
 }
 
 window.set = set; window.del = del;
@@ -478,14 +542,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   catch (e) { status('⚠️ ' + e.message); return; }
   const kst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   $('f_date').value = kst;
-  $('f_site').value = store.get('site') || '구리갈매역세권 A-2BL 아파트 건설공사 3공구';
-  $('f_loc').value = store.get('loc') || '';
-  ['f_site', 'f_loc', 'f_memo', 'f_date'].forEach(id => $(id).addEventListener('input', () => {
+  $('f_site').value = store.get('site') || '';
+  ['f_site', 'f_date'].forEach(id => $(id).addEventListener('input', () => {
     if (id === 'f_site') store.set('site', $(id).value);
-    if (id === 'f_loc') store.set('loc', $(id).value);
     invalidate();
     schedule();
   }));
+  renderDefaults();
   // 입력값 초기화는 사진을 다 읽은 뒤에 (먼저 지우면 파일 데이터가 무효화됨)
   $('pick').addEventListener('change', async e => {
     await addFiles([...e.target.files]);
