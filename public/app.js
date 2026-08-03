@@ -1,23 +1,19 @@
-/* 사진대지 — 양식과 동일한 레이아웃을 캔버스에 그려 미리보기·PDF로, 사진은 서버에서 xlsx로 */
+/* 사진대지 — 양식 정의(forms.json)대로 화면·PDF를 그리고, 엑셀은 서버가 양식 파일에 삽입 */
 
-// ── 양식 치수 (템플릿 xlsx에서 그대로 가져옴) ──────────────────────────────
-const CHARW = [1.71, 9.43, 9.43, 9.43, 9.43, 10.14, 9.43, 9.43, 1.71];  // A~I 열 너비(문자 단위)
-const PX_PER_CHAR = 8;                  // 맑은 고딕 11pt 기준 1문자 = 8px (엑셀 환산)
-const COLW = CHARW.map(w => w * PX_PER_CHAR + 5);                       // 96dpi 픽셀
-const ROWH = [49.5, 27, 9.75, 21, 27, 27, 27, 27, 27, 27, 27, 27, 20.25, 9.75,
-              27, 27, 7.5, 21, 27, 9.75, 27, 27, 27, 27, 36.75, 27, 20.25, 7.5, 27, 27]; // 1~30행, pt
-const BOX = [[4, 13], [18, 27]];        // 사진박스 행범위 (테두리는 A~I열 전체)
-const INF = [[15, 16], [29, 30]];       // [위치·일자 행, 내용·비고 행]
-const PER = 2;                          // 페이지당 사진 수
-const INSET = 12;                       // 사진과 박스 테두리 사이 여백 (96dpi 픽셀)
-const MARGIN = { lr: 0.7086614, tb: 0.7480315 };   // 양식의 인쇄 여백 (inch)
+let FORM = null;                 // 현재 선택된 양식 정의
+let FORMS = [];                  // 사용 가능한 양식 목록
+let COLW = [], X = [], Y = [], SHEET_W = 0, SHEET_H = 0;
 const F_TITLE = '"Malgun Gothic","맑은 고딕",sans-serif';
 const F_TABLE = '"Gulim","굴림","GulimChe","굴림체","Malgun Gothic",sans-serif';
 
-// X[n] = n번째 열의 시작 x, Y[r] = r번째 행의 끝 y (즉 시작은 Y[r-1])
-const X = [0, 0]; COLW.forEach(w => X.push(X[X.length - 1] + w));
-const Y = [0]; ROWH.forEach(h => Y.push(Y[Y.length - 1] + h * 4 / 3));  // pt → 96dpi 픽셀
-const SHEET_W = X[10], SHEET_H = Y[30];
+/** 선택한 양식의 치수를 화면 좌표로 미리 계산 */
+function useForm(form) {
+  FORM = form;
+  COLW = form.cols.map(w => w * (form.pxPerChar || 8) + 5);          // 96dpi 픽셀
+  X = [0, 0]; COLW.forEach(w => X.push(X[X.length - 1] + w));        // X[n] = n번째 열 시작
+  Y = [0]; form.rows.forEach(h => Y.push(Y[Y.length - 1] + h * 4 / 3));  // Y[r] = r행 끝
+  SHEET_W = X[X.length - 1]; SHEET_H = Y[Y.length - 1];
+}
 
 const items = [];   // {bmp, w, h, loc, memo, bigo}
 const $ = id => document.getElementById(id);
@@ -105,7 +101,7 @@ function renderList() {
 }
 
 function renderPreview() {
-  const pages = Math.ceil(items.length / PER);
+  const pages = Math.ceil(items.length / FORM.perPage);
   $('pvLabel').style.display = pages ? 'block' : 'none';
   const box = $('preview');
   box.innerHTML = '';
@@ -135,72 +131,72 @@ function drawPage(cv, page, dpi) {
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
 
   // 엑셀과 같이 100%를 넘겨 확대하지 않고, 인쇄영역 안에서 가로 가운데 정렬
-  const S = dpi / 72;                                   // pt → 캔버스 px
+  const m = FORM.margins || { lr: 0.7, tb: 0.75 };
+  const S = dpi / 72;                                       // pt → 캔버스 px
   const sheetW = SHEET_W * 0.75, sheetH = SHEET_H * 0.75;   // 96dpi px → pt
-  const printW = (8.2677 - MARGIN.lr * 2) * 72, printH = (11.6929 - MARGIN.tb * 2) * 72;
+  const printW = (8.2677 - m.lr * 2) * 72, printH = (11.6929 - m.tb * 2) * 72;
   const k = Math.min(1, printW / sheetW, printH / sheetH);
-  const ox = MARGIN.lr * 72 + (printW - sheetW * k) / 2, oy = MARGIN.tb * 72;
+  const ox = m.lr * 72 + (printW - sheetW * k) / 2, oy = m.tb * 72;
 
   const u = v => v * 0.75 * k * S;         // 양식 픽셀(96dpi) → 캔버스 px
   const px = v => (ox * S) + u(v), py = v => (oy * S) + u(v);
   const fs = v => v * k * S;               // 글자 pt → 캔버스 px
+  const last = X.length - 1;
 
   g.strokeStyle = '#000'; g.fillStyle = '#000';
   g.lineWidth = Math.max(1, 0.75 * k * S);
   g.textBaseline = 'middle';
 
-  // 제목 (맑은 고딕 20pt 굵게) / 현장명 (11pt)
-  g.font = `bold ${fs(20)}px ${F_TITLE}`;
-  g.textAlign = 'center';
-  g.fillText('사  진  대  지', px((X[1] + X[10]) / 2), py((Y[0] + Y[1]) / 2));
-  g.font = `${fs(11)}px ${F_TITLE}`;
-  g.textAlign = 'left';
-  g.fillText('현장명 : ' + $('f_site').value, px(X[1]), py((Y[1] + Y[2]) / 2));
+  const t = FORM.title;
+  if (t) {
+    g.font = `${t.bold ? 'bold ' : ''}${fs(t.size || 20)}px ${F_TITLE}`;
+    g.textAlign = 'center';
+    g.fillText(t.text, px((X[t.cols[0]] + X[t.cols[1] + 1]) / 2), py((Y[t.row - 1] + Y[t.row]) / 2));
+  }
+  const st = FORM.site;
+  if (st) {
+    g.font = `${fs(st.size || 11)}px ${F_TITLE}`;
+    g.textAlign = 'left';
+    g.fillText((st.prefix || '') + $('f_site').value, px(X[st.col]), py((Y[st.row - 1] + Y[st.row]) / 2));
+  }
 
   const dateText = fmtDate($('f_date').value);
-  for (let s = 0; s < PER; s++) {
-    const it = items[page * PER + s];
-    const [top, bot] = BOX[s];
+  FORM.slots.forEach((slot, s) => {
+    const it = items[page * FORM.perPage + s];
+    const val = { loc: it && it.loc, memo: it && it.memo, bigo: it && it.bigo, date: it && dateText };
 
-    // 사진박스: 테두리는 A~I열 전체 (표와 같은 폭), 사진은 안쪽에 가운데 정렬
-    const bx = px(X[1]), by = py(Y[top - 1]);
-    const bw = u(X[10] - X[1]), bh = u(Y[bot] - Y[top - 1]);
+    // 사진박스 + 사진 가운데 정렬
+    const [r0, r1] = slot.box.rows, [c0, c1] = slot.box.cols;
+    const bx = px(X[c0]), by = py(Y[r0 - 1]);
+    const bw = u(X[c1 + 1] - X[c0]), bh = u(Y[r1] - Y[r0 - 1]);
     g.strokeRect(bx, by, bw, bh);
     if (it) {
-      const pad = u(INSET);
+      const pad = u(FORM.photoInset || 0);
       const r = Math.min((bw - pad * 2) / it.w, (bh - pad * 2) / it.h);
       const w = it.w * r, h = it.h * r;
       g.drawImage(it.bmp, bx + (bw - w) / 2, by + (bh - h) / 2, w, h);
     }
 
-    // 위치·일자 / 내용·비고 표 (굴림체 11pt)
-    const [rInfo, rMemo] = INF[s];
-    row(g, rInfo, '위 치', it ? it.loc : '', '일 자', it ? dateText : '', px, py, fs);
-    row(g, rMemo, '내 용', it ? it.memo : '', '비 고', it ? it.bigo : '', px, py, fs);
-  }
-}
-
-function row(g, r, lab1, val1, lab2, val2, px, py, fs) {
-  const y0 = py(Y[r - 1]), y1 = py(Y[r]);
-  const cells = [
-    [px(X[1]), px(X[3]), lab1],
-    [px(X[3]), px(X[6]), val1],
-    [px(X[6]), px(X[7]), lab2],
-    [px(X[7]), px(X[10]), val2],
-  ];
-  for (const [x0, x1, text] of cells) {
-    g.strokeRect(x0, y0, x1 - x0, y1 - y0);
-    if (!text) continue;
-    let size = fs(11);
-    g.font = `${size}px ${F_TABLE}`;
-    const max = (x1 - x0) - fs(5);
-    while (g.measureText(text).width > max && size > fs(5)) {
-      size -= fs(0.4);
-      g.font = `${size}px ${F_TABLE}`;
+    // 항목 표
+    for (const line of slot.rows) {
+      const y0 = py(Y[line.row - 1]), y1 = py(Y[line.row]);
+      for (const cell of line.cells) {
+        const x0 = px(X[cell.cols[0]]), x1 = px(X[Math.min(cell.cols[1] + 1, last)]);
+        g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+        const text = cell.label || val[cell.field] || '';
+        if (!text) continue;
+        let size = fs(FORM.tableSize || 11);
+        g.font = `${size}px ${F_TABLE}`;
+        const max = (x1 - x0) - fs(5);
+        while (g.measureText(text).width > max && size > fs(5)) {
+          size -= fs(0.4);
+          g.font = `${size}px ${F_TABLE}`;
+        }
+        g.textAlign = 'center';
+        g.fillText(text, (x0 + x1) / 2, (y0 + y1) / 2);
+      }
     }
-    g.textAlign = 'center';
-    g.fillText(text, (x0 + x1) / 2, (y0 + y1) / 2);
-  }
+  });
 }
 
 function fmtDate(iso) {
@@ -211,7 +207,7 @@ function fmtDate(iso) {
 
 // ── PDF 만들기 (브라우저에서 직접 생성) ────────────────────────────────────
 async function buildPdf() {
-  const pages = Math.ceil(items.length / PER), jpegs = [];
+  const pages = Math.ceil(items.length / FORM.perPage), jpegs = [];
   const cv = document.createElement('canvas');
   for (let p = 0; p < pages; p++) {
     drawPage(cv, p, 200);              // 글씨가 또렷하게 나오도록 200dpi
@@ -287,7 +283,7 @@ async function buildXlsx() {
   const res = await fetch('/api/xlsx', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ site: $('f_site').value, date: $('f_date').value, items: payload }),
+    body: JSON.stringify({ form: FORM.id, site: $('f_site').value, date: $('f_date').value, items: payload }),
   });
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.status);
   return res.blob();
@@ -452,8 +448,34 @@ async function loadShared() {
   if (files.length) await addFiles(files);
 }
 
+async function loadForms() {
+  let list = null;
+  try {
+    const res = await fetch('/api/forms');
+    if (res.ok) { list = await res.json(); store.set('forms', JSON.stringify(list)); }
+  } catch (e) { /* 오프라인 → 캐시 사용 */ }
+  if (!list) { try { list = JSON.parse(store.get('forms')); } catch (e) { /* 무시 */ } }
+  if (!list || !list.length) throw new Error('양식 정보를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
+
+  FORMS = list;
+  const sel = $('f_form');
+  sel.innerHTML = list.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('');
+  const saved = store.get('form');
+  sel.value = list.some(f => f.id === saved) ? saved : list[0].id;
+  $('formRow').style.display = list.length > 1 ? '' : 'none';
+  useForm(list.find(f => f.id === sel.value));
+  sel.addEventListener('change', () => {
+    store.set('form', sel.value);
+    useForm(FORMS.find(f => f.id === sel.value));
+    invalidate();
+    render();
+  });
+}
+
 window.set = set; window.del = del;
 window.addEventListener('DOMContentLoaded', async () => {
+  try { await loadForms(); }
+  catch (e) { status('⚠️ ' + e.message); return; }
   const kst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   $('f_date').value = kst;
   $('f_site').value = store.get('site') || '구리갈매역세권 A-2BL 아파트 건설공사 3공구';

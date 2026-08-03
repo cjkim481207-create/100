@@ -42,7 +42,9 @@
   label{display:block;font-size:12px;color:var(--dim);letter-spacing:.04em;margin-bottom:3px}
   input{width:100%;padding:9px 10px;font:inherit;font-size:15px;color:var(--ink);
         background:transparent;border:1px solid var(--line);border-radius:7px}
-  input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  select{width:100%;padding:9px 10px;font:inherit;font-size:15px;color:var(--ink);
+         background:var(--card);border:1px solid var(--line);border-radius:7px}
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
 
   .pick{display:block;margin-top:12px;padding:14px;text-align:center;font-weight:700;
         background:var(--accent);color:var(--accent-ink);border-radius:8px;cursor:pointer}
@@ -95,6 +97,10 @@
 
   <div class="panel">
     <div class="grid">
+      <div style="grid-column:1/-1;display:none" id="formRow">
+        <label for="f_form">양식</label>
+        <select id="f_form"></select>
+      </div>
       <div style="grid-column:1/-1"><label for="f_site">현장명</label><input id="f_site"></div>
       <div><label for="f_loc">위치 (새 사진 기본값)</label><input id="f_loc" placeholder="구리갈매A-2BL 현장내"></div>
       <div><label for="f_memo">내용 (새 사진 기본값)</label><input id="f_memo" placeholder="가배수로 정리"></div>

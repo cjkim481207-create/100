@@ -39,10 +39,45 @@
    (또는 앱을 열고 [사진 추가])
 3. 위치·내용 확인 → **엑셀(xlsx) 저장** / **PDF 저장**
 
-### 양식을 바꿀 때
+### 양식 추가·교체
 
-`templates/template.xlsx`를 새 양식으로 교체하고, 칸 위치가 달라졌다면
-`lib/build.js`와 `public/app.js` 위쪽의 `BOX`·`INF`·`COLW`·`ROWH` 값을 맞춰 주세요.
+양식은 코드가 아니라 `templates/forms.json` 에 정의돼 있고, 앱 화면 위쪽에서 골라 쓴다
+(양식이 1개면 선택칸은 숨겨진다).
+
+**새 양식 추가하기**
+1. 양식 엑셀 파일을 `templates/` 에 넣는다 (예: `templates/lh-daeji.xlsx`)
+2. `templates/forms.json` 에 항목을 하나 추가한다
+
+```jsonc
+{
+  "id": "lh",                       // 겹치지 않는 영문 id
+  "name": "LH 사진대지",             // 화면 선택칸에 보이는 이름
+  "template": "lh-daeji.xlsx",
+  "block": 30,                      // 1페이지가 차지하는 행 수
+  "perPage": 2,                     // 페이지당 사진 수
+  "pxPerChar": 8,                   // 열 너비 환산 (맑은 고딕 11pt = 8)
+  "cols": [1.71, 9.43, ...],        // A열부터 열 너비 (엑셀의 열 너비 값)
+  "rows": [49.5, 27, ...],          // 1행부터 행 높이 (pt)
+  "margins": { "lr": 0.71, "tb": 0.75 },   // 인쇄 여백 (inch)
+  "title": { "row": 1, "cols": [1, 9], "text": "사  진  대  지", "size": 20, "bold": true },
+  "site":  { "row": 2, "col": 1, "prefix": "현장명 : ", "size": 11 },
+  "photoInset": 12,                 // 사진과 테두리 사이 여백 (px)
+  "slots": [                        // 사진 한 장이 들어가는 자리마다
+    { "box": { "rows": [4, 13], "cols": [1, 9] },     // 사진칸 위치
+      "rows": [                                        // 그 아래 항목 표
+        { "row": 15, "cells": [
+          { "cols": [1, 2], "label": "위 치" }, { "cols": [3, 5], "field": "loc" },
+          { "cols": [6, 6], "label": "일 자" }, { "cols": [7, 9], "field": "date" }] }
+      ] }
+  ]
+}
+```
+
+`field` 로 쓸 수 있는 값: `loc`(위치) · `memo`(내용) · `bigo`(비고) · `date`(일자).
+행 높이·열 너비는 엑셀에서 행/열 머리글을 끌어보면 나오는 값이며,
+`python3 -c "import openpyxl; ..."` 로 확인해도 된다.
+
+미리보기·PDF와 엑셀 삽입이 모두 이 정의 하나를 보고 동작하므로, 정의만 맞으면 세 가지가 함께 맞는다.
 
 ---
 
