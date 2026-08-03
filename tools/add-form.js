@@ -46,7 +46,8 @@ function parseMerges(ws) {
 }
 
 function analyze(file, opt) {
-  return new ExcelJS.Workbook().xlsx.readFile(file).then(wb => analyzeBook(wb, opt));
+  const o = Object.assign({ template: path.basename(file) }, opt);
+  return new ExcelJS.Workbook().xlsx.readFile(file).then(wb => analyzeBook(wb, o));
 }
 
 /** 업로드된 엑셀(버퍼)에서 바로 분석 */
