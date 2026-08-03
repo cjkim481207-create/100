@@ -46,6 +46,32 @@ const store = {
 };
 const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
+/** 내가 추가한 양식은 이 기기에 저장한다 (정의 + 양식 파일) */
+const idb = {
+  open() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('daeji', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('forms', { keyPath: 'id' });
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async run(mode, fn) {
+    try {
+      const db = await this.open();
+      return await new Promise(res => {
+        const req = fn(db.transaction('forms', mode).objectStore('forms'));
+        req.onsuccess = () => res(req.result);
+        req.onerror = () => res(null);
+      });
+    } catch (e) { return null; }
+  },
+  all() { return this.run('readonly', st => st.getAll()); },
+  put(v) { return this.run('readwrite', st => st.put(v)); },
+  del(id) { return this.run('readwrite', st => st.delete(id)); },
+};
+const custom = {};        // id → { def, data(base64) }
+
 // ── 사진 추가 ──────────────────────────────────────────────────────────────
 const MAX_SRC = 1600;   // 원본을 이 크기로 줄여 보관 (사진이 많아도 폰 메모리가 버티도록)
 
@@ -312,10 +338,12 @@ async function buildXlsx() {
   if (payload.reduce((s, p) => s + p.data.length, 0) > 3.6e6) {
     throw new Error(`사진이 너무 많습니다 (${items.length}장) — 15장쯤으로 나눠서 만들어 주세요`);
   }
+  const body = { form: FORM.id, site: $('f_site').value, date: $('f_date').value, items: payload };
+  if (custom[FORM.id]) { body.formDef = FORM; body.template = custom[FORM.id].data; }
   const res = await fetch('/api/xlsx', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ form: FORM.id, site: $('f_site').value, date: $('f_date').value, items: payload }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.status);
   return res.blob();
@@ -486,9 +514,11 @@ function renderTabs() {
   const bar = $('tabs');
   bar.innerHTML = FORMS.map(f => `
     <button class="tab${f.id === FORM.id ? ' on' : ''}" data-id="${esc(f.id)}">${esc(formName(f))}</button>`).join('')
-    + `<button class="tab edit" id="tabEdit" title="탭 이름 바꾸기">✎</button>`;
+    + `<button class="tab edit" id="tabEdit" title="탭 이름 바꾸기">✎</button>`
+    + `<button class="tab add" id="tabAdd" title="양식 추가">+ 양식</button>`;
   bar.querySelectorAll('.tab[data-id]').forEach(b => b.addEventListener('click', () => selectForm(b.dataset.id)));
   $('tabEdit').addEventListener('click', renameTab);
+  $('tabAdd').addEventListener('click', () => $('formFile').click());
   const on = bar.querySelector('.tab.on');
   if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
@@ -503,12 +533,57 @@ function selectForm(id) {
 }
 
 function renameTab() {
-  const cur = formName(FORM);
-  const name = prompt('탭 이름', cur);
+  const mine = !!custom[FORM.id];
+  const name = prompt(mine ? '탭 이름 (비우면 이 양식을 지웁니다)' : '탭 이름', formName(FORM));
   if (name === null) return;
   const t = name.trim();
-  if (t) store.set('name:' + FORM.id, t); else store.set('name:' + FORM.id, FORM.name);
+  if (t) { store.set('name:' + FORM.id, t); renderTabs(); return; }
+  if (!mine) { store.set('name:' + FORM.id, FORM.name); renderTabs(); return; }
+  if (!confirm(`'${formName(FORM)}' 양식을 지울까요?`)) return;
+  removeForm(FORM.id);
+}
+
+async function removeForm(id) {
+  await idb.del(id);
+  delete custom[id];
+  FORMS = FORMS.filter(f => f.id !== id);
+  useForm(FORMS[0]);
+  store.set('form', FORMS[0].id);
+  invalidate();
   renderTabs();
+  render();
+  status('양식을 지웠습니다.');
+}
+
+/** 엑셀 양식 파일을 올리면 서버가 칸 위치를 읽어 새 탭으로 추가한다 */
+async function addForm(file) {
+  if (!file) return;
+  status('양식 분석 중…');
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
+    const data = btoa(bin);
+    const name = file.name.replace(/\.xlsx?$/i, '');
+    const res = await fetch('/api/analyze', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, data }),
+    });
+    const def = await res.json();
+    if (!res.ok) throw new Error(def.error || '인식 실패');
+
+    custom[def.id] = { id: def.id, def, data };
+    await idb.put({ id: def.id, def, data });
+    FORMS = FORMS.concat([def]);
+    store.set('form', def.id);
+    useForm(def);
+    invalidate();
+    renderTabs();
+    render();
+    status(`✅ '${name}' 추가 — 사진 ${def.perPage}장/페이지, 항목 [${FIELDS.map(f => f.label).join(', ') || '없음'}]`);
+  } catch (e) {
+    status('⚠️ 양식 추가 실패: ' + e.message);
+  }
 }
 
 async function loadForms() {
@@ -520,10 +595,13 @@ async function loadForms() {
   if (!list) { try { list = JSON.parse(store.get('forms')); } catch (e) { /* 무시 */ } }
   if (!list || !list.length) throw new Error('양식 정보를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
 
+  const mine = (await idb.all()) || [];
+  for (const m of mine) { custom[m.id] = m; list = list.concat([m.def]); }
+
   FORMS = list;
   const saved = store.get('form');
   useForm(list.find(f => f.id === saved) || list[0]);
-  $('tabs').style.display = list.length > 1 ? 'flex' : 'none';
+  $('tabs').style.display = 'flex';
   renderTabs();
 }
 
@@ -550,6 +628,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   }));
   renderDefaults();
   // 입력값 초기화는 사진을 다 읽은 뒤에 (먼저 지우면 파일 데이터가 무효화됨)
+  $('formFile').addEventListener('change', async e => {
+    await addForm(e.target.files[0]);
+    e.target.value = '';
+  });
   $('pick').addEventListener('change', async e => {
     await addFiles([...e.target.files]);
     e.target.value = '';

@@ -46,7 +46,16 @@ function parseMerges(ws) {
 }
 
 function analyze(file, opt) {
-  return new ExcelJS.Workbook().xlsx.readFile(file).then(wb => {
+  return new ExcelJS.Workbook().xlsx.readFile(file).then(wb => analyzeBook(wb, opt));
+}
+
+/** 업로드된 엑셀(버퍼)에서 바로 분석 */
+function analyzeBuffer(buf, opt) {
+  return new ExcelJS.Workbook().xlsx.load(buf).then(wb => analyzeBook(wb, opt));
+}
+
+function analyzeBook(wb, opt) {
+  return Promise.resolve().then(() => {
     const ws = opt.sheet
       ? wb.worksheets.find(w => w.name === opt.sheet)
       : (wb.worksheets.find(w => sheetHasTitle(w)) || wb.worksheets[0]);
@@ -160,7 +169,7 @@ function analyze(file, opt) {
     return {
       id: opt.id,
       name: opt.name,
-      template: path.basename(file),
+      template: opt.template || '',
       sheet: ws.name,
       block,
       blockStart,
@@ -220,4 +229,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { analyze };
+module.exports = { analyze, analyzeBuffer };

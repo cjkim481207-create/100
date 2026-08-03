@@ -43,6 +43,7 @@
              border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--dim)}
   #tabs .tab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
   #tabs .tab.edit{padding:9px 12px}
+  #tabs .tab.add{border-style:dashed;color:var(--accent);font-weight:700}
 
   .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
   .grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
@@ -93,6 +94,7 @@
 </header>
 
 <div id="tabs"></div>
+<input id="formFile" type="file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
 
 <div class="wrap">
   <div id="inapp">
