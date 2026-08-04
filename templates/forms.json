@@ -8,6 +8,8 @@
     "blockStart": 1,
     "header": null,
     "perPage": 2,
+    "blocksPerPage": 1,
+    "firstPageBlocks": 1,
     "pxPerChar": 8,
     "cols": [
       1.71,
@@ -135,7 +137,7 @@
                   3,
                   5
                 ],
-                "label": "가배수로 정리"
+                "field": "memo"
               },
               {
                 "cols": [
