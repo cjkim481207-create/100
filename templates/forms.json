@@ -3,7 +3,10 @@
     "id": "daeji2",
     "name": "사진대지 (2장/페이지)",
     "template": "template.xlsx",
+    "sheet": "사진대지",
     "block": 30,
+    "blockStart": 1,
+    "header": null,
     "perPage": 2,
     "pxPerChar": 8,
     "cols": [
@@ -50,8 +53,8 @@
       27
     ],
     "margins": {
-      "lr": 0.7086614,
-      "tb": 0.7480315
+      "lr": 0.7086614173228347,
+      "tb": 0.7480314960629921
     },
     "title": {
       "row": 1,
@@ -132,7 +135,7 @@
                   3,
                   5
                 ],
-                "field": "memo"
+                "label": "가배수로 정리"
               },
               {
                 "cols": [
@@ -260,7 +263,7 @@
       ]
     },
     "perPage": 2,
-    "pxPerChar": 8,
+    "pxPerChar": 7,
     "cols": [
       2.14,
       5.14,
@@ -447,7 +450,7 @@
       ]
     },
     "perPage": 2,
-    "pxPerChar": 8,
+    "pxPerChar": 7,
     "cols": [
       2.14,
       5.14,

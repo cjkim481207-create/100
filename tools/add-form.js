@@ -82,6 +82,13 @@ function analyzeBook(wb, opt) {
     // 3) 열 너비 · 행 높이
     const cols = [];
     for (let c = 1; c <= lastCol; c++) cols.push(ws.getColumn(c).width || 8.43);
+
+    // 열 너비 → 픽셀 환산값은 기본 글꼴에 따라 7 또는 8이다.
+    // 양식은 인쇄 폭에 맞춰 만들어지므로, 인쇄 가능 폭 안에 들어오는 큰 값을 고른다.
+    const mg = (ws.pageSetup && ws.pageSetup.margins) || {};
+    const printIn = 8.2677 - ((mg.left != null ? mg.left : 0.7) + (mg.right != null ? mg.right : 0.7));
+    const widthIn = px => cols.reduce((t, w) => t + Math.round(w * px + 5), 0) / 96;
+    const pxPerChar = opt.px || (widthIn(8) <= printIn + 0.02 ? 8 : 7);
     const rows = [];
     for (let r = 1; r <= blockEnd; r++) rows.push(ws.getRow(r).height || 16.5);
 
@@ -176,7 +183,7 @@ function analyzeBook(wb, opt) {
       blockStart,
       header,
       perPage: slots.length,
-      pxPerChar: opt.px || 8,
+      pxPerChar,
       cols, rows,
       margins: { lr: m ? m.left : 0.7086614, tb: m ? m.top : 0.7480315 },
       title: { row: blockStart, cols: [title.c1, title.c2], text: titleText,
