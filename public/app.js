@@ -149,8 +149,14 @@ function renderList() {
   items.forEach((it, i) => thumb(document.querySelector(`[data-thumb="${i}"]`), it));
 }
 
+function pageCount() {
+  const blocks = Math.ceil(items.length / FORM.perPage);
+  const bpp = FORM.blocksPerPage || 1, fpb = FORM.firstPageBlocks || bpp;
+  return blocks <= fpb ? Math.min(1, blocks) : 1 + Math.ceil((blocks - fpb) / bpp);
+}
+
 function renderPreview() {
-  const pages = Math.ceil(items.length / FORM.perPage);
+  const pages = pageCount();
   $('pvLabel').style.display = pages ? 'block' : 'none';
   const box = $('preview');
   box.innerHTML = '';
@@ -182,14 +188,23 @@ function drawPage(cv, page, dpi) {
   // 엑셀과 같이 100%를 넘겨 확대하지 않고, 인쇄영역 안에서 가로 가운데 정렬
   const m = FORM.margins || { lr: 0.7, tb: 0.75 };
   const S = dpi / 72;                                       // pt → 캔버스 px
-  const sheetW = SHEET_W * 0.75, sheetH = SHEET_H * 0.75;   // 96dpi px → pt
+  const _bpp = FORM.blocksPerPage || 1, _fpb = FORM.firstPageBlocks || _bpp;
+  const _BH = Y[Y.length - 1] - blockTop();
+  const sheetW = SHEET_W * 0.75;
+  const sheetH = Math.max(blockTop() + _fpb * _BH, _bpp * _BH) * 0.75;   // 96dpi px → pt
   const printW = (8.2677 - m.lr * 2) * 72, printH = (11.6929 - m.tb * 2) * 72;
   const k = Math.min(1, printW / sheetW, printH / sheetH);
   const ox = m.lr * 72 + (printW - sheetW * k) / 2, oy = m.tb * 72;
 
-  const top = page === 0 ? 0 : blockTop();   // 2장부터는 머리글을 빼고 블록부터
+  const bpp = FORM.blocksPerPage || 1, fpb = FORM.firstPageBlocks || bpp;
+  const BH = Y[Y.length - 1] - blockTop();               // 블록 한 개 높이
+  const first = page === 0 ? 0 : fpb + (page - 1) * bpp;  // 이 장의 첫 블록 번호
+  const nBlk = page === 0 ? fpb : bpp;
+  let shift = 0;                                          // 블록을 아래로 쌓는 양
+
   const u = v => v * 0.75 * k * S;           // 양식 픽셀(96dpi) → 캔버스 px
-  const px = v => (ox * S) + u(v), py = v => (oy * S) + u(v - top);
+  const px = v => (ox * S) + u(v);
+  const py = v => (oy * S) + u(v - (page === 0 ? 0 : blockTop()) + shift);
   const fs = v => v * k * S;               // 글자 pt → 캔버스 px
   const last = X.length - 1;
 
@@ -200,17 +215,18 @@ function drawPage(cv, page, dpi) {
   if (page === 0 && FORM.header) {
     for (const c of FORM.header.cells) {
       g.font = `${c.bold ? 'bold ' : ''}${fs(c.size || 11)}px ${F_TITLE}`;
-      g.textAlign = 'left';
-      g.fillText(c.text, px(X[c.cols[0]]), py((Y[c.row - 1] + Y[c.row]) / 2));
+      const mid = (Y[c.row - 1] + Y[c.row]) / 2;
+      if (c.align === 'center') {
+        g.textAlign = 'center';
+        g.fillText(c.text, px((X[c.cols[0]] + X[Math.min(c.cols[1] + 1, X.length - 1)]) / 2), py(mid));
+      } else {
+        g.textAlign = 'left';
+        g.fillText(c.text, px(X[c.cols[0]]) + fs(2), py(mid));
+      }
     }
   }
   const st0 = FORM.site;
-  const t = FORM.title;
-  if (t) {
-    g.font = `${t.bold ? 'bold ' : ''}${fs(t.size || 20)}px ${F_TITLE}`;
-    g.textAlign = 'center';
-    g.fillText(t.text, px((X[t.cols[0]] + X[t.cols[1] + 1]) / 2), py((Y[t.row - 1] + Y[t.row]) / 2));
-  }
+
   const st = FORM.site;
   if (st && (page === 0 || st.row >= blockStart())) {
     g.font = `${fs(st.size || 11)}px ${F_TITLE}`;
@@ -219,8 +235,23 @@ function drawPage(cv, page, dpi) {
   }
 
   const dateText = fmtDate($('f_date').value);
+  for (let b = 0; b < nBlk; b++) {
+    shift = b * BH;
+    drawBlock(g, first + b, dateText, px, py, u, fs);
+  }
+  shift = 0;
+}
+
+function drawBlock(g, block, dateText, px, py, u, fs) {
+  const last = X.length - 1;
+  const t = FORM.title;
+  if (t) {
+    g.font = `${t.bold ? 'bold ' : ''}${fs(t.size || 20)}px ${F_TITLE}`;
+    g.textAlign = 'center';
+    g.fillText(t.text, px((X[t.cols[0]] + X[t.cols[1] + 1]) / 2), py((Y[t.row - 1] + Y[t.row]) / 2));
+  }
   FORM.slots.forEach((slot, s) => {
-    const it = items[page * FORM.perPage + s];
+    const it = items[block * FORM.perPage + s];
     const val = Object.assign({}, it && it.v, { date: it ? dateText : '' });
 
     // 사진박스 + 사진 가운데 정렬

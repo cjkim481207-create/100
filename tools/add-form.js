@@ -71,7 +71,8 @@ function analyzeBook(wb, opt) {
     if (!title) throw new Error('제목 칸(예: "사 진 대 지")을 찾지 못했습니다.');
     const lastCol = title.c2;
     const titleText = textOf(ws.getCell(title.r1, title.c1).value);
-    const blockStart = title.r1;
+    const blockStart = opt.blockstart || title.r1;
+    const titleInBlock = title.r1 >= blockStart;
 
     // 2) 1페이지 행 수: 같은 제목이 다시 나오는 간격
     const same = titles.filter(t => textOf(ws.getCell(t.r1, t.c1).value) === titleText).map(t => t.r1);
@@ -98,10 +99,14 @@ function analyzeBook(wb, opt) {
       const cells = [];
       for (let r = 1; r < blockStart; r++) {
         for (let c = 1; c <= lastCol; c++) {
+          // 병합된 칸은 왼쪽 위 한 번만 (그렇지 않으면 같은 글자가 열마다 겹쳐 그려진다)
+          const inside = merges.find(x => x.r1 <= r && x.r2 >= r && x.c1 <= c && x.c2 >= c);
+          if (inside && !(inside.r1 === r && inside.c1 === c)) continue;
           const t = textOf(ws.getCell(r, c).value);
           if (!t.trim() || /현장명|공사명/.test(t)) continue;
-          const m = merges.find(x => x.r1 === r && x.c1 === c);
-          cells.push({ row: r, cols: [c, m ? Math.min(m.c2, lastCol) : c], text: t,
+          const al = (ws.getCell(r, c).alignment || {}).horizontal;
+          cells.push({ row: r, cols: [c, inside ? Math.min(inside.c2, lastCol) : c], text: t,
+                       align: al === 'center' ? 'center' : 'left',
                        size: ws.getCell(r, c).font?.size || 11, bold: !!(ws.getCell(r, c).font || {}).bold });
         }
       }
@@ -129,9 +134,12 @@ function analyzeBook(wb, opt) {
     if (!boxes.length) throw new Error('사진칸(큰 병합 영역)을 찾지 못했습니다.');
 
     // 테두리는 병합보다 넓을 수 있다 → 위쪽 행에서 좌우 테두리 위치를 확인
-    const boxCols = box => {
+    const boxCols = (box, siblings) => {
+      const others = (siblings || []).filter(b => b !== box);
+      const lo = Math.max(1, ...others.filter(b => b.c2 < box.c1).map(b => b.c2 + 1));
+      const hi = Math.min(lastCol, ...others.filter(b => b.c1 > box.c2).map(b => b.c1 - 1));
       let c0 = box.c1, c1 = box.c2;
-      for (let c = 1; c <= lastCol; c++) {
+      for (let c = lo; c <= hi; c++) {
         const b = ws.getCell(box.r1, c).border || {};
         if (b.left && b.left.style && c < c0) c0 = c;
         if (b.right && b.right.style && c > c1) c1 = c;
@@ -151,29 +159,53 @@ function analyzeBook(wb, opt) {
       return out;
     };
 
-    const slots = boxes.map((box, i) => {
-      const until = boxes[i + 1] ? boxes[i + 1].r1 - 1 : blockEnd;
-      const tableRows = [];
-      for (let r = box.r2 + 1; r <= until; r++) {
+    // 같은 행 범위에 놓인 사진칸끼리 묶는다 (좌·우 배치)
+    const groups = [];
+    for (const b of boxes) {
+      const g = groups.find(x => x.r1 === b.r1 && x.r2 === b.r2);
+      if (g) g.boxes.push(b); else groups.push({ r1: b.r1, r2: b.r2, boxes: [b] });
+    }
+    groups.forEach(g => g.boxes.sort((a, b) => a.c1 - b.c1));
+
+    const slots = [];
+    groups.forEach((g, gi) => {
+      const until = groups[gi + 1] ? groups[gi + 1].r1 - 1 : blockEnd;
+      const lines = [];
+      for (let r = g.r2 + 1; r <= until; r++) {
         const regions = rowRegions(r);
-        if (!regions.some(g => fieldOf(g.text))) continue;      // 항목명이 없는 행은 건너뜀
-        const cells = [];
-        let pending = null;
-        for (const g of regions) {
-          const f = fieldOf(g.text);
-          if (f) { cells.push({ cols: g.cols, label: g.text }); pending = f; }
-          else if (pending) { cells.push({ cols: g.cols, field: pending }); pending = null; }
-          else cells.push({ cols: g.cols });
-        }
-        tableRows.push({ row: r, cells });
+        if (regions.some(x => fieldOf(x.text))) lines.push({ row: r, regions });
       }
-      return { box: { rows: [box.r1, box.r2], cols: boxCols(box) }, rows: tableRows };
-    }).filter(s => s.rows.length);
+      for (const box of g.boxes) {
+        const [bc0, bc1] = boxCols(box, g.boxes);
+        const tableRows = [];
+        for (const line of lines) {
+          const cells = [];
+          let pending = null;
+          for (const x of line.regions) {
+            if (x.cols[1] < bc0 || x.cols[0] > bc1) continue;    // 이 사진칸의 열 범위만
+            const f = fieldOf(x.text);
+            if (f) { cells.push({ cols: x.cols, label: x.text }); pending = f; }
+            else if (pending) { cells.push({ cols: x.cols, field: pending }); pending = null; }
+            else cells.push({ cols: x.cols });
+          }
+          if (cells.length) tableRows.push({ row: line.row, cells });
+        }
+        if (tableRows.length) slots.push({ box: { rows: [box.r1, box.r2], cols: [bc0, bc1] }, rows: tableRows });
+      }
+    });
 
     if (!slots.length) throw new Error('위치·내용 항목칸을 찾지 못했습니다.');
 
     const label = slots[0].rows[0].cells.find(c => c.label);
     const m = ws.pageSetup && ws.pageSetup.margins;
+
+    // 한 장에 블록이 몇 개 들어가는지 (첫 장은 머리글만큼 덜 들어간다)
+    const sum = (a, b) => rows.slice(a - 1, b).reduce((t, h) => t + h, 0);
+    const headerH = blockStart > 1 ? sum(1, blockStart - 1) : 0;
+    const blockH = sum(blockStart, blockEnd);
+    const printH = (11.6929 - ((m && m.top != null ? m.top : 0.75) + (m && m.bottom != null ? m.bottom : 0.75))) * 72;
+    const blocksPerPage = Math.max(1, Math.floor(printH / blockH));
+    const firstPageBlocks = Math.max(1, Math.floor((printH - headerH) / blockH));
     return {
       id: opt.id,
       name: opt.name,
@@ -183,12 +215,13 @@ function analyzeBook(wb, opt) {
       blockStart,
       header,
       perPage: slots.length,
+      blocksPerPage, firstPageBlocks,
       pxPerChar,
       cols, rows,
       margins: { lr: m ? m.left : 0.7086614, tb: m ? m.top : 0.7480315 },
-      title: { row: blockStart, cols: [title.c1, title.c2], text: titleText,
-               size: ws.getCell(blockStart, title.c1).font?.size || 20,
-               bold: !!(ws.getCell(blockStart, title.c1).font || {}).bold },
+      title: titleInBlock ? { row: title.r1, cols: [title.c1, title.c2], text: titleText,
+               size: ws.getCell(title.r1, title.c1).font?.size || 20,
+               bold: !!(ws.getCell(title.r1, title.c1).font || {}).bold } : null,
       site,
       photoInset: opt.inset || 12,
       tableSize: (label && ws.getCell(slots[0].rows[0].row, label.cols[0]).font?.size) || 11,
@@ -205,19 +238,20 @@ function main() {
     process.exit(1);
   }
   const opt = { dry: args.includes('--dry') };
-  for (const k of ['name', 'id', 'block', 'px', 'inset', 'sheet', 'start']) {
+  for (const k of ['name', 'id', 'block', 'px', 'inset', 'sheet', 'start', 'blockstart']) {
     const i = args.indexOf('--' + k);
-    if (i >= 0) opt[k] = ['block', 'px', 'inset', 'start'].includes(k) ? +args[i + 1] : args[i + 1];
+    if (i >= 0) opt[k] = ['block', 'px', 'inset', 'start', 'blockstart'].includes(k) ? +args[i + 1] : args[i + 1];
   }
   opt.id = opt.id || path.basename(file, '.xlsx').replace(/[^a-zA-Z0-9_-]/g, '') || 'form';
   opt.name = opt.name || path.basename(file, '.xlsx');
 
   analyze(file, opt).then(def => {
     console.log(`양식: ${def.name} (${def.id})`);
-    console.log(`  제목      : "${def.title.text}"  (${def.title.size}pt${def.title.bold ? ' 굵게' : ''})`);
+    console.log(`  제목      : ${def.title ? `"${def.title.text}" (${def.title.size}pt)` : '머리글에 포함'}`);
     console.log(`  현장명 행  : ${def.site ? def.site.row + '행 "' + def.site.prefix + '"' : '없음'}`);
     console.log(`  시트      : ${def.sheet}`);
-    console.log(`  1페이지    : ${def.blockStart}행부터 ${def.block}행, 사진 ${def.perPage}장` +
+    console.log(`  한 장에    : 사진 ${def.perPage * def.firstPageBlocks}장 (2장부터 ${def.perPage * def.blocksPerPage}장)`);
+    console.log(`  블록      : ${def.blockStart}행부터 ${def.block}행, 사진 ${def.perPage}장` +
                 (def.header ? ` (머리글 ${def.header.rows[0]}~${def.header.rows[1]}행)` : ''));
     console.log(`  표 너비    : A~${colName(def.cols.length)}열`);
     def.slots.forEach((s, i) => {
