@@ -618,7 +618,7 @@ async function removeForm(id) {
 }
 
 /** 엑셀 양식 파일을 올리면 서버가 칸 위치를 읽어 새 탭으로 추가한다 */
-async function addForm(file) {
+async function addForm(file, retryOpts) {
   if (!file) return;
   status('양식 분석 중…');
   try {
@@ -627,9 +627,11 @@ async function addForm(file) {
     for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
     const data = btoa(bin);
     const name = file.name.replace(/\.xlsx?$/i, '');
+    const body = { name, data };
+    if (retryOpts) Object.assign(body, retryOpts);
     const res = await fetch('/api/analyze', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, data }),
+      body: JSON.stringify(body),
     });
     const def = await res.json();
     if (!res.ok) throw new Error(def.error || '인식 실패');
@@ -644,6 +646,12 @@ async function addForm(file) {
     render();
     status(`✅ '${name}' 추가 — 사진 ${def.perPage}장/페이지, 항목 [${FIELDS.map(f => f.label).join(', ') || '없음'}]`);
   } catch (e) {
+    if (e.message.includes('1페이지 행 수') && !retryOpts) {
+      const block = prompt('1페이지(블록)의 행 수를 숫자로 입력해 주세요.\n엑셀을 열어 "사진대지" 제목 아래 행 수를 세어 넣으세요.', '16');
+      if (block && /^\d+$/.test(block)) {
+        return addForm(file, { block: +block });
+      }
+    }
     status('⚠️ 양식 추가 실패: ' + e.message);
   }
 }
