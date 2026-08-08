@@ -651,7 +651,9 @@ async function addForm(file) {
 async function loadForms() {
   let list = null;
   try {
-    const res = await fetch('/api/forms');
+    // 양식 정의가 바뀌면 미리보기/PDF 렌더링도 즉시 같은 정의를 써야 한다.
+    // 브라우저나 CDN의 이전 forms.json 응답을 재사용하지 않는다.
+    const res = await fetch('/api/forms?rev=20260808-style', { cache: 'no-store' });
     if (res.ok) { list = await res.json(); store.set('forms', JSON.stringify(list)); }
   } catch (e) { /* 오프라인 → 캐시 사용 */ }
   if (!list) { try { list = JSON.parse(store.get('forms')); } catch (e) { /* 무시 */ } }
