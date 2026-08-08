@@ -3107,7 +3107,7 @@
       ]
     },
     "perPage": 2,
-    "blocksPerPage": 3,
+    "blocksPerPage": 2,
     "firstPageBlocks": 2,
     "pxPerChar": 7,
     "cols": [
