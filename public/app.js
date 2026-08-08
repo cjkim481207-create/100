@@ -646,14 +646,25 @@ async function addForm(file, retryOpts) {
     render();
     status(`✅ '${name}' 추가 — 사진 ${def.perPage}장/페이지, 항목 [${FIELDS.map(f => f.label).join(', ') || '없음'}]`);
   } catch (e) {
-    if (e.message.includes('1페이지 행 수') && !retryOpts) {
-      const block = prompt('1페이지(블록)의 행 수를 숫자로 입력해 주세요.\n엑셀을 열어 "사진대지" 제목 아래 행 수를 세어 넣으세요.', '16');
-      if (block && /^\d+$/.test(block)) {
-        return addForm(file, { block: +block });
+      if (e.message.includes('1페이지 행 수') && !retryOpts) {
+        status('⚠️ 블록 행 수를 입력해 주세요.');
+        const dlg = $('blockDialog');
+        const inp = $('blockInput');
+        inp.value = '16';
+        dlg.style.display = 'flex';
+        inp.focus();
+        inp.select();
+        const p = new Promise(res => {
+          $('blockConfirm').onclick = () => { dlg.style.display = ''; res(inp.value); };
+          $('blockCancel').onclick = () => { dlg.style.display = ''; res(null); };
+        });
+        const block = await p;
+        if (block && /^\d+$/.test(block)) {
+          return addForm(file, { block: +block });
+        }
       }
+      status('⚠️ 양식 추가 실패: ' + e.message);
     }
-    status('⚠️ 양식 추가 실패: ' + e.message);
-  }
 }
 
 async function loadForms() {

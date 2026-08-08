@@ -133,6 +133,21 @@
   </div>
   <div id="status"></div>
 
+  <div id="blockDialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center;padding:20px">
+    <div style="background:var(--card);border-radius:12px;padding:20px;max-width:360px;width:100%;box-shadow:0 4px 20px rgba(0,0,0,.3)">
+      <div style="margin:0 0 6px;font-weight:700;font-size:15px">블록 행 수 입력</div>
+      <div style="margin:0 0 14px;font-size:13px;color:var(--dim)">
+        "사진대지" 제목 아래 몇 행까지가 한 페이지(블록)인가요?<br>
+        엑셀을 열어 행 번호를 확인해 보세요.
+      </div>
+      <input id="blockInput" type="number" value="16" min="1" style="margin-bottom:14px;padding:10px;font-size:16px;border:1px solid var(--line);border-radius:8px;width:100%;background:transparent;color:var(--ink)">
+      <div style="display:flex;gap:8px">
+        <button id="blockCancel" style="flex:1;padding:11px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--dim);font:inherit;font-size:14px;font-weight:700;cursor:pointer">취소</button>
+        <button id="blockConfirm" style="flex:1;padding:11px;border:0;border-radius:8px;background:var(--accent);color:var(--accent-ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer">확인</button>
+      </div>
+    </div>
+  </div>
+
   <div class="sec" id="pvLabel">미리보기 (실제 출력 모양)</div>
   <div id="preview"></div>
 </div>
