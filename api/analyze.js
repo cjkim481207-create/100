@@ -1,5 +1,7 @@
 const { analyzeBuffer } = require('../tools/add-form.js');
 
+module.exports.config = { api: { bodyParser: { sizeLimit: '12mb' } } };
+
 // 앱에서 올린 양식 엑셀을 분석해 양식 정의를 돌려준다 (파일 자체는 서버에 저장하지 않는다)
 module.exports = async (req, res) => {
   if (req.method !== 'POST') { res.status(405).json({ error: 'POST만 지원합니다.' }); return; }

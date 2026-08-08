@@ -15,7 +15,7 @@ function fieldDefs(form) {
       let label = '';
       for (const cell of line.cells) {
         if (cell.label) label = cell.label;
-        else if (cell.field && cell.field !== 'date' && !seen[cell.field]) {
+        else if (cell.field && !seen[cell.field]) {
           seen[cell.field] = 1;
           out.push({ key: cell.field, label: (label || cell.field).replace(/\s+/g, ' ').trim() });
         }
@@ -111,7 +111,9 @@ async function addFiles(files) {
     try {
       const p = await loadPhoto(f);
       const v = {};
-      for (const fd of FIELDS) v[fd.key] = ($('d_' + fd.key) || {}).value || '';
+      for (const fd of FIELDS) {
+        v[fd.key] = fd.key === 'date' ? $('f_date').value : (($('d_' + fd.key) || {}).value || '');
+      }
       items.push({ ...p, v });
     } catch (e) { failed++; }
   }
@@ -141,7 +143,7 @@ function renderList() {
       <canvas class="thumb" data-thumb="${i}"></canvas>
       <div class="fields">
         <div class="no">사진 ${i + 1}</div>
-        ${FIELDS.map(f => `<input value="${esc(it.v[f.key])}" placeholder="${esc(f.label)}"
+        ${FIELDS.map(f => `<input ${f.key === 'date' ? 'type="date"' : ''} value="${esc(it.v[f.key])}" placeholder="${esc(f.label)}"
            oninput="set(${i},'${esc(f.key)}',this.value)">`).join('')}
       </div>
       <button class="del" onclick="del(${i})" aria-label="삭제">✕</button>
@@ -252,7 +254,7 @@ function drawBlock(g, block, dateText, px, py, u, fs) {
   }
   FORM.slots.forEach((slot, s) => {
     const it = items[block * FORM.perPage + s];
-    const val = Object.assign({}, it && it.v, { date: it ? dateText : '' });
+    const val = Object.assign({}, it && it.v, { date: it ? fmtDate((it.v || {}).date || $('f_date').value) : '' });
 
     // 사진박스 + 사진 가운데 정렬
     const [r0, r1] = slot.box.rows, [c0, c1] = slot.box.cols;
@@ -296,7 +298,7 @@ function fmtDate(iso) {
 
 // ── PDF 만들기 (브라우저에서 직접 생성) ────────────────────────────────────
 async function buildPdf() {
-  const pages = Math.ceil(items.length / FORM.perPage), jpegs = [];
+  const pages = pageCount(), jpegs = [];
   const cv = document.createElement('canvas');
   for (let p = 0; p < pages; p++) {
     drawPage(cv, p, 200);              // 글씨가 또렷하게 나오도록 200dpi
