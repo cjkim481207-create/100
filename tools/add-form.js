@@ -38,6 +38,28 @@ const sheetHasTitle = ws => {
 const textOf = v => (v && typeof v === 'object' && v.richText)
   ? v.richText.map(r => r.text).join('') : (v == null ? '' : String(v));
 
+// 브라우저 미리보기/PDF에서도 엑셀 원본의 표·채움·글꼴을 재현할 수 있도록
+// 첫 양식 블록의 셀 서식을 간결한 JSON으로 보관한다.
+const rgb = color => color && color.argb ? '#' + color.argb.slice(-6) : null;
+function templateCells(ws, merges, lastCol, blockEnd, dynamic) {
+  const out = [];
+  for (let r = 1; r <= blockEnd; r++) for (let c = 1; c <= lastCol; c++) {
+    const merged = merges.find(m => m.r1 <= r && m.r2 >= r && m.c1 <= c && m.c2 >= c);
+    if (merged && (merged.r1 !== r || merged.c1 !== c)) continue;
+    const cell = ws.getCell(r, c), b = cell.border || {}, f = cell.font || {}, a = cell.alignment || {};
+    const fill = cell.fill && cell.fill.type === 'pattern' ? rgb(cell.fill.fgColor) : null;
+    const borders = {};
+    for (const side of ['left', 'right', 'top', 'bottom']) if (b[side] && b[side].style) borders[side] = b[side].style;
+    const text = textOf(cell.value);
+    if (!text && !fill && !Object.keys(borders).length) continue;
+    const r2 = merged ? merged.r2 : r, c2 = merged ? merged.c2 : c;
+    out.push({ r, c, r2, c2, text: dynamic.has(`${r}:${c}`) ? '' : text,
+      fill, borders, font: { size: f.size || 11, bold: !!f.bold, italic: !!f.italic,
+        underline: !!f.underline, color: rgb(f.color) }, align: a.horizontal || 'left' });
+  }
+  return out;
+}
+
 function parseMerges(ws) {
   return (ws.model.merges || []).map(m => {
     const p = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(m);
@@ -206,6 +228,10 @@ function analyzeBook(wb, opt) {
     const printH = (11.6929 - ((m && m.top != null ? m.top : 0.75) + (m && m.bottom != null ? m.bottom : 0.75))) * 72;
     const blocksPerPage = Math.max(1, Math.floor(printH / blockH));
     const firstPageBlocks = Math.max(1, Math.floor((printH - headerH) / blockH));
+    const dynamic = new Set();
+    for (const slot of slots) for (const line of slot.rows) for (const cell of line.cells)
+      if (cell.field) dynamic.add(`${line.row}:${cell.cols[0]}`);
+    if (site) dynamic.add(`${site.row}:${site.col}`);
     return {
       id: opt.id,
       name: opt.name,
@@ -225,6 +251,7 @@ function analyzeBook(wb, opt) {
       site,
       photoInset: opt.inset || 12,
       tableSize: (label && ws.getCell(slots[0].rows[0].row, label.cols[0]).font?.size) || 11,
+      templateCells: templateCells(ws, merges, lastCol, blockEnd, dynamic),
       slots,
     };
   });

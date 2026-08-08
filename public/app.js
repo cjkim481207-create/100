@@ -179,6 +179,31 @@ function thumb(cv, it) {
   g.drawImage(it.bmp, (S - w) / 2, (S - h) / 2, w, h);
 }
 
+function drawTemplateCells(g, cells, px, py, fs) {
+  for (const cell of cells) {
+    const x0 = px(X[cell.c]), x1 = px(X[cell.c2 + 1]);
+    const y0 = py(Y[cell.r - 1]), y1 = py(Y[cell.r2]);
+    if (cell.fill) { g.fillStyle = cell.fill; g.fillRect(x0, y0, x1 - x0, y1 - y0); }
+    g.strokeStyle = '#000';
+    for (const side of ['left', 'right', 'top', 'bottom']) {
+      if (!cell.borders || !cell.borders[side]) continue;
+      if (side === 'left') { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0, y1); g.stroke(); }
+      if (side === 'right') { g.beginPath(); g.moveTo(x1, y0); g.lineTo(x1, y1); g.stroke(); }
+      if (side === 'top') { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y0); g.stroke(); }
+      if (side === 'bottom') { g.beginPath(); g.moveTo(x0, y1); g.lineTo(x1, y1); g.stroke(); }
+    }
+    if (!cell.text) continue;
+    const font = cell.font || {};
+    g.fillStyle = font.color || '#000';
+    g.font = `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${fs(font.size || 11)}px ${F_TITLE}`;
+    g.textAlign = cell.align === 'center' ? 'center' : (cell.align === 'right' ? 'right' : 'left');
+    const tx = cell.align === 'center' ? (x0 + x1) / 2 : (cell.align === 'right' ? x1 - fs(2) : x0 + fs(2));
+    g.fillText(cell.text, tx, (y0 + y1) / 2);
+    if (font.underline) { const tw = g.measureText(cell.text).width; const ux = cell.align === 'center' ? tx - tw / 2 : (cell.align === 'right' ? tx - tw : tx); g.beginPath(); g.moveTo(ux, (y0 + y1) / 2 + fs((font.size || 11) * .48)); g.lineTo(ux + tw, (y0 + y1) / 2 + fs((font.size || 11) * .48)); g.stroke(); }
+  }
+  g.fillStyle = '#000'; g.strokeStyle = '#000';
+}
+
 /** A4 한 장을 그린다 (엑셀 인쇄와 동일한 배치). dpi=96 미리보기, 200은 PDF용 */
 function drawPage(cv, page, dpi) {
   const W = Math.round(8.2677 * dpi), H = Math.round(11.6929 * dpi);
@@ -214,7 +239,9 @@ function drawPage(cv, page, dpi) {
   g.lineWidth = Math.max(1, 0.75 * k * S);
   g.textBaseline = 'middle';
 
-  if (page === 0 && FORM.header) {
+  const styled = FORM.templateCells && FORM.templateCells.length;
+  if (page === 0 && styled) drawTemplateCells(g, FORM.templateCells.filter(c => c.r < blockStart()), px, py, fs);
+  if (page === 0 && FORM.header && !styled) {
     for (const c of FORM.header.cells) {
       g.font = `${c.bold ? 'bold ' : ''}${fs(c.size || 11)}px ${F_TITLE}`;
       const mid = (Y[c.row - 1] + Y[c.row]) / 2;
@@ -239,6 +266,7 @@ function drawPage(cv, page, dpi) {
   const dateText = fmtDate($('f_date').value);
   for (let b = 0; b < nBlk; b++) {
     shift = b * BH;
+    if (styled) drawTemplateCells(g, FORM.templateCells.filter(c => c.r >= blockStart()), px, py, fs);
     drawBlock(g, first + b, dateText, px, py, u, fs);
   }
   shift = 0;
@@ -246,8 +274,9 @@ function drawPage(cv, page, dpi) {
 
 function drawBlock(g, block, dateText, px, py, u, fs) {
   const last = X.length - 1;
+  const styled = FORM.templateCells && FORM.templateCells.length;
   const t = FORM.title;
-  if (t) {
+  if (t && !styled) {
     g.font = `${t.bold ? 'bold ' : ''}${fs(t.size || 20)}px ${F_TITLE}`;
     g.textAlign = 'center';
     g.fillText(t.text, px((X[t.cols[0]] + X[t.cols[1] + 1]) / 2), py((Y[t.row - 1] + Y[t.row]) / 2));
@@ -260,7 +289,7 @@ function drawBlock(g, block, dateText, px, py, u, fs) {
     const [r0, r1] = slot.box.rows, [c0, c1] = slot.box.cols;
     const bx = px(X[c0]), by = py(Y[r0 - 1]);
     const bw = u(X[c1 + 1] - X[c0]), bh = u(Y[r1] - Y[r0 - 1]);
-    g.strokeRect(bx, by, bw, bh);
+    if (!styled) g.strokeRect(bx, by, bw, bh);
     if (it) {
       const pad = u(FORM.photoInset || 0);
       const r = Math.min((bw - pad * 2) / it.w, (bh - pad * 2) / it.h);
@@ -273,8 +302,8 @@ function drawBlock(g, block, dateText, px, py, u, fs) {
       const y0 = py(Y[line.row - 1]), y1 = py(Y[line.row]);
       for (const cell of line.cells) {
         const x0 = px(X[cell.cols[0]]), x1 = px(X[Math.min(cell.cols[1] + 1, last)]);
-        g.strokeRect(x0, y0, x1 - x0, y1 - y0);
-        const text = cell.label || val[cell.field] || '';
+        if (!styled) g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+        const text = (styled ? val[cell.field] : (cell.label || val[cell.field])) || '';
         if (!text) continue;
         let size = fs(FORM.tableSize || 11);
         g.font = `${size}px ${F_TABLE}`;
