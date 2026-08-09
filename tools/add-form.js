@@ -35,8 +35,20 @@ const sheetHasTitle = ws => {
       if (TITLE_RE.test(textOf(ws.getCell(r, c).value).replace(/\s+/g, ''))) return true;
   return false;
 };
-const textOf = v => (v && typeof v === 'object' && v.richText)
-  ? v.richText.map(r => r.text).join('') : (v == null ? '' : String(v));
+// 수식·날짜 셀은 실제 제출 문서(빈 양식이 아니라 이미 채워 넣은 파일)를 업로드하면 자주 섞여 들어온다.
+// String(v)로 그대로 찍으면 "[object Object]" 같은 값이 정적 머리글 텍스트로 그대로 박제된다.
+const textOf = v => {
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    if (v.richText) return v.richText.map(r => r.text).join('');
+    if (v instanceof Date) return '';                  // 날짜 값은 정적 텍스트로 쓰지 않는다
+    if ('result' in v) return v.result == null ? '' : String(v.result);   // 수식 셀(계산 결과)
+    if ('formula' in v) return '';                      // 계산 결과가 캐시되지 않은 수식
+    if ('text' in v) return String(v.text);              // 하이퍼링크 등
+    return '';
+  }
+  return String(v);
+};
 
 // 브라우저 미리보기/PDF에서도 엑셀 원본의 표·채움·글꼴을 재현할 수 있도록
 // 첫 양식 블록의 셀 서식을 간결한 JSON으로 보관한다.
