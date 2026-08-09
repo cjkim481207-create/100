@@ -197,18 +197,9 @@ function drawTemplateCells(g, cells, px, py, fs) {
     g.fillStyle = font.color || '#000';
     g.font = `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${fs(font.size || 11)}px ${F_TITLE}`;
     const my = (y0 + y1) / 2;
-    // 엑셀 '균등 분할'(distributed): 글자를 칸 너비에 고르게 펼친다.
-    // 한글 양식의 '일 자', '비 고' 같은 라벨이 흔히 이 정렬을 쓴다.
-    if (cell.align === 'distributed' && [...cell.text].length > 1) {
-      const chars = [...cell.text], pad = fs(2);
-      const wid = chars.map(ch => g.measureText(ch).width);
-      const gap = ((x1 - x0 - pad * 2) - wid.reduce((t, w) => t + w, 0)) / (chars.length - 1);
-      g.textAlign = 'left';
-      let cx = x0 + pad;
-      chars.forEach((ch, i) => { g.fillText(ch, cx, my); cx += wid[i] + gap; });
-      continue;
-    }
-    const mid = cell.align === 'center' || cell.align === 'centerContinuous';
+    // 엑셀 '균등 분할'(distributed)은 마지막 줄을 펼치지 않는다 (justifyLastLine 기본값이 거짓).
+    // 한글 양식의 '일 자', '비 고' 같은 한 줄짜리 라벨은 그 줄이 곧 마지막 줄이므로 가운데로 그려진다.
+    const mid = cell.align === 'center' || cell.align === 'centerContinuous' || cell.align === 'distributed';
     g.textAlign = mid ? 'center' : (cell.align === 'right' ? 'right' : 'left');
     const tx = mid ? (x0 + x1) / 2 : (cell.align === 'right' ? x1 - fs(2) : x0 + fs(2));
     g.fillText(cell.text, tx, my);
