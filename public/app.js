@@ -329,8 +329,37 @@ function fmtDate(iso) {
   return `${+y}년 ${+m}월 ${+d}일`;
 }
 
-// ── PDF 만들기 (브라우저에서 직접 생성) ────────────────────────────────────
+// ── PDF 만들기 ──────────────────────────────────────────────────────────
+// 변환 서버(LibreOffice)가 켜져 있으면 그걸 써서 진짜 엑셀 인쇄 결과를 받는다.
+// 없거나 실패하면 화면에서 흉내 낸 그림으로 대신 만든다 (원본과 미세하게 다를 수 있음).
+let renderOk = null;   // null=아직 모름, true/false=확인됨 (세션 동안 한 번만 물어본다)
+async function checkRenderService() {
+  if (renderOk !== null) return renderOk;
+  try {
+    const r = await fetch('/api/render');
+    renderOk = r.ok && (await r.json()).ok === true;
+  } catch (e) { renderOk = false; }
+  return renderOk;
+}
+
 async function buildPdf() {
+  if (await checkRenderService()) {
+    try { return await buildPdfReal(); }
+    catch (e) { /* 서버가 잠깐 응답 없으면 화면 그림으로 대신 만든다 */ }
+  }
+  return buildPdfLocal();
+}
+
+async function buildPdfReal() {
+  const res = await fetch('/api/render', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ format: 'pdf' }, await pdfBody())),
+  });
+  if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.status);
+  return res.blob();
+}
+
+async function buildPdfLocal() {
   const pages = pageCount(), jpegs = [];
   const cv = document.createElement('canvas');
   for (let p = 0; p < pages; p++) {
@@ -394,7 +423,8 @@ function jpgSize(b) {
 }
 
 // ── XLSX 만들기 (서버가 양식 파일에 사진을 삽입) ───────────────────────────
-async function buildXlsx() {
+/** 서버로 보낼 사진·양식 정보 — /api/xlsx 와 /api/render 가 같은 모양을 쓴다 */
+async function pdfBody() {
   let payload = null;
   for (const [max, q] of [[1400, 0.8], [1100, 0.72], [900, 0.65]]) {
     payload = await Promise.all(items.map(async it => Object.assign(
@@ -406,10 +436,14 @@ async function buildXlsx() {
   }
   const body = { form: FORM.id, site: $('f_site').value, date: $('f_date').value, items: payload };
   if (custom[FORM.id]) { body.formDef = FORM; body.template = custom[FORM.id].data; }
+  return body;
+}
+
+async function buildXlsx() {
   const res = await fetch('/api/xlsx', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(await pdfBody()),
   });
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.status);
   return res.blob();

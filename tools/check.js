@@ -108,52 +108,67 @@ async function checkDef(form) {
 function checkXlsx(file) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xz'));
   execFileSync('unzip', ['-oq', file, '-d', dir]);
-  const sheet = fs.readFileSync(path.join(dir, 'xl/worksheets/sheet1.xml'), 'utf8');
+  const wsDir = path.join(dir, 'xl/worksheets');
+  // 시트 파일 이름은 sheet1.xml 이라는 보장이 없다 (올린 양식은 sheet4.xml 인 경우도 있다)
+  const names = fs.readdirSync(wsDir).filter(f => /^sheet\d+\.xml$/i.test(f));
   const wbx = fs.readFileSync(path.join(dir, 'xl/workbook.xml'), 'utf8');
   const styles = fs.readFileSync(path.join(dir, 'xl/styles.xml'), 'utf8');
-
   const pa = (/<definedName[^>]*>([^<]*)<\/definedName>/.exec(wbx) || [])[1] || '';
-  const merges = [...sheet.matchAll(/ref="([A-Z]+\d+:[A-Z]+\d+)"/g)].map(m => m[1]);
-  const maxS = Math.max(0, ...[...sheet.matchAll(/<c [^>]*s="(\d+)"/g)].map(m => +m[1]));
   const nXf = +(/<cellXfs count="(\d+)"/.exec(styles) || [0, 0])[1];
-  const rows = [...sheet.matchAll(/<row r="(\d+)"/g)].map(m => +m[1]);
-  const brk = [...sheet.matchAll(/<brk [^>]*max="(\d+)"/g)].map(m => +m[1]);
 
   const ORDER = ['sheetPr', 'dimension', 'sheetViews', 'sheetFormatPr', 'cols', 'sheetData',
     'sheetCalcPr', 'sheetProtection', 'autoFilter', 'mergeCells', 'conditionalFormatting',
     'dataValidations', 'hyperlinks', 'printOptions', 'pageMargins', 'pageSetup', 'headerFooter',
     'rowBreaks', 'colBreaks', 'drawing', 'legacyDrawing'];
-  const top = []; let depth = 0;
-  for (const [, close, name, selfc] of sheet.replace(/^<\?xml[^>]*\?>/, '').matchAll(/<(\/?)([a-zA-Z:]+)[^>]*?(\/?)>/g)) {
-    if (close) { depth--; continue; }
-    if (depth === 1) top.push(name);
-    if (!selfc) depth++;
-  }
-  const oi = top.map(n => ORDER.indexOf(n));
-  const sp = (/<sheetPr>(.*?)<\/sheetPr>/.exec(sheet) || [])[1] || '';
   const SP = ['tabColor', 'outlinePr', 'pageSetUpPr'];
-  const si = [...sp.matchAll(/<([a-zA-Z]+)/g)].map(m => SP.indexOf(m[1]));
 
-  const tests = [
-    [!/\$\$/.test(pa), '인쇄영역 표기'],
-    [merges.length === new Set(merges).size, '병합 중복 없음'],
-    [maxS < nXf, '서식 번호 범위'],
-    [rows.every((r, i) => i === 0 || r > rows[i - 1]), '행 번호 오름차순'],
-    [brk.every(v => v <= 16383), '페이지 나눔 열 번호'],
-    [oi.every((v, i) => v >= 0 && (i === 0 || v > oi[i - 1])), '시트 요소 순서'],
-    [si.every((v, i) => v >= 0 && (i === 0 || v > si[i - 1])), 'sheetPr 요소 순서'],
-  ];
-  tests.forEach(([c, m]) => { if (!c) ok(false, m); });
-  const pass = tests.every(([c]) => c);
-  if (pass) ok(true, '엑셀 파일 형식 7개 항목');
-  return pass;
+  // 아래 일곱 가지는 시트마다 따로 봐야 한다 (여러 시트를 이어 붙이면 순서 검사가 무너진다)
+  const bad = new Set();
+  for (const name of names) {
+    const sheet = fs.readFileSync(path.join(wsDir, name), 'utf8');
+    const merges = [...sheet.matchAll(/ref="([A-Z]+\d+:[A-Z]+\d+)"/g)].map(m => m[1]);
+    const maxS = Math.max(0, ...[...sheet.matchAll(/<c [^>]*s="(\d+)"/g)].map(m => +m[1]));
+    const rows = [...sheet.matchAll(/<row r="(\d+)"/g)].map(m => +m[1]);
+    const brk = [...sheet.matchAll(/<brk [^>]*max="(\d+)"/g)].map(m => +m[1]);
+
+    const top = []; let depth = 0;
+    for (const [, close, tag, selfc] of sheet.replace(/^<\?xml[^>]*\?>/, '').matchAll(/<(\/?)([a-zA-Z:]+)[^>]*?(\/?)>/g)) {
+      if (close) { depth--; continue; }
+      if (depth === 1) top.push(tag);
+      if (!selfc) depth++;
+    }
+    const oi = top.map(n => ORDER.indexOf(n));
+    const sp = (/<sheetPr>(.*?)<\/sheetPr>/.exec(sheet) || [])[1] || '';
+    const si = [...sp.matchAll(/<([a-zA-Z]+)/g)].map(m => SP.indexOf(m[1]));
+    const asc = a => a.every((v, i) => v >= 0 && (i === 0 || v > a[i - 1]));
+
+    for (const [good, label] of [
+      [merges.length === new Set(merges).size, '병합 중복 없음'],
+      [maxS < nXf, '서식 번호 범위'],
+      [rows.every((r, i) => i === 0 || r > rows[i - 1]), '행 번호 오름차순'],
+      [brk.every(v => v <= 16383), '페이지 나눔 열 번호'],
+      [asc(oi), '시트 요소 순서'],
+      [asc(si), 'sheetPr 요소 순서'],
+    ]) if (!good) bad.add(`${label} (${name})`);
+  }
+  if (/\$\$/.test(pa)) bad.add('인쇄영역 표기');
+  // 외부 통합문서를 가리키던 이름이 남아 있으면 엑셀이 파일을 아예 열지 못한다
+  const orphan = [...wbx.matchAll(/<definedName[^>]*>([^<]*)<\/definedName>/g)]
+    .filter(m => /\[\d+\]/.test(m[1])).length;
+  if (orphan && !fs.existsSync(path.join(dir, 'xl/externalLinks'))) {
+    bad.add(`가리킬 곳 없는 외부참조 이름 ${orphan}개`);
+  }
+
+  bad.forEach(m => ok(false, m));
+  if (!bad.size) ok(true, `엑셀 파일 형식 7개 항목 (시트 ${names.length}개)`);
+  return !bad.size;
 }
 
 /** 3) 사진이 칸 정중앙인지 */
 async function checkCenter(file, form) {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(file);
-  const ws = wb.worksheets[0];
+  const ws = (form.sheet && wb.getWorksheet(form.sheet)) || wb.worksheets[0];
   const colPx = c => Math.round((ws.getColumn(c).width || 8.43) * (form.pxPerChar || 8) + 5);
   const rowPx = r => (ws.getRow(r).height || 16.5) * 4 / 3;
   const xAt = (col, off) => { let x = 0; for (let c = 1; c < col; c++) x += colPx(c); return x + off; };
@@ -184,11 +199,34 @@ async function checkCenter(file, form) {
   return !bad;
 }
 
+/** xlsx 를 실제 인쇄 모양 그대로 PDF 로 바꾼다.
+ *  엑셀이 깔려 있으면 엑셀에게 시킨다 — 우리가 흉내 낸 그림이 아니라 '정답지'가 된다. */
+function toPdf(file, sheet) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz'));
+  const pdf = path.join(dir, path.basename(file).replace(/\.xlsx$/i, '.pdf'));
+  const target = sheet ? `$wb.Worksheets.Item('${sheet.replace(/'/g, "''")}')` : '$wb';
+  const ps = `$xl = New-Object -ComObject Excel.Application
+$xl.Visible = $false; $xl.DisplayAlerts = $false
+try { $wb = $xl.Workbooks.Open('${file.replace(/'/g, "''")}', 0, $true)
+      ${target}.ExportAsFixedFormat(0, '${pdf.replace(/'/g, "''")}'); $wb.Close($false) }
+finally { $xl.Quit() }`;
+  try {
+    execFileSync('powershell', ['-NonInteractive', '-NoProfile', '-Command', ps], { stdio: 'ignore' });
+    if (fs.existsSync(pdf)) return pdf;
+  } catch (e) { /* 엑셀이 없으면 아래로 */ }
+  for (const app of ['soffice', 'libreoffice']) {
+    try {
+      execFileSync(app, ['--headless', '--convert-to', 'pdf', '--outdir', dir, file], { stdio: 'ignore' });
+      if (fs.existsSync(pdf)) return pdf;
+    } catch (e) { /* 다음 이름으로 */ }
+  }
+  return null;
+}
+
 /** 4) 실제 인쇄 결과의 세로 선 위치가 정의와 같은지 */
 function checkPrint(file, form) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pz'));
-  execFileSync('libreoffice', ['--headless', '--convert-to', 'pdf', '--outdir', dir, file], { stdio: 'ignore' });
-  const pdf = path.join(dir, path.basename(file).replace(/\.xlsx$/, '.pdf'));
+  const pdf = toPdf(file, form.sheet);
+  if (!pdf) { ok(false, '인쇄 결과 검사에는 엑셀이나 LibreOffice 가 필요합니다'); return false; }
   // 사진칸이 나란히 놓인 양식은 한 줄에 여러 칸의 표가 함께 인쇄된다 → 같은 행을 모두 모은다
   const row = form.slots[0].rows[0].row;
   const cells = form.slots.flatMap(s => s.rows.filter(l => l.row === row).flatMap(l => l.cells))
@@ -208,7 +246,7 @@ function checkPrint(file, form) {
 /** 아직 등록하지 않은 양식(앱에 올리는 그 파일)이 원본 그대로 뽑혔는지.
  *  화면·PDF 는 원본을 변환하는 게 아니라 추출한 정의로 다시 그리므로,
  *  정의가 원본과 한 칸이라도 다르면 그만큼 화면이 원본과 달라진다. */
-async function checkUpload(file) {
+async function checkUpload(file, wantPrint) {
   const { analyze } = require(path.join(__dirname, 'add-form.js'));
   const def = await analyze(file, { id: 'chk', name: path.basename(file) });
   const wb = new ExcelJS.Workbook();
@@ -282,6 +320,22 @@ async function checkUpload(file) {
     .map(c => `${colName(c.c)}${c.r} "${c.text}"`);
   junk.length ? fail('셀 값이 글자로 잘못 변환됨', junk) : ok(true, '글자 변환');
 
+  // 실제로 사진을 넣어 뽑아 보고, 엑셀이 인쇄한 선 위치와 정의를 맞춰 본다
+  if (wantPrint) {
+    const { stripPhotos } = require(path.join(ROOT, 'lib/build.js'));
+    const clean = await stripPhotos(fs.readFileSync(file), def);
+    const photos = samplePhotos(def.perPage);
+    const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pr')), 'out.xlsx');
+    fs.writeFileSync(out, await buildXlsx({
+      formDef: def, template: clean.buffer.toString('base64'),
+      site: '검사 현장', date: '2026-08-04',
+      items: photos.map((p, i) => Object.assign({ fields: { memo: '검사 ' + (i + 1), loc: 'A구역', bigo: '' } }, p)),
+    }));
+    good = checkXlsx(out) && good;
+    good = (await checkCenter(out, def)) && good;
+    good = checkPrint(out, def) && good;
+  }
+
   return good;
 }
 
@@ -291,9 +345,9 @@ async function checkUpload(file) {
   const fi = args.indexOf('--file');
   if (fi >= 0) {
     const f = args[fi + 1];
-    if (!f) { console.error('사용법: node tools/check.js --file <양식.xlsx>'); process.exit(1); }
+    if (!f) { console.error('사용법: node tools/check.js --file <양식.xlsx> [--pdf]'); process.exit(1); }
     console.log(`\n■ ${path.basename(f)}`);
-    const good = await checkUpload(f).catch(e => { ok(false, e.message); return false; });
+    const good = await checkUpload(f, wantPdf).catch(e => { ok(false, e.message); return false; });
     console.log(`\n${good ? '원본 그대로 나옵니다' : '원본과 다르게 나옵니다'}`);
     process.exit(good ? 0 : 1);
   }
