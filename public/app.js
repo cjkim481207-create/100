@@ -196,10 +196,23 @@ function drawTemplateCells(g, cells, px, py, fs) {
     const font = cell.font || {};
     g.fillStyle = font.color || '#000';
     g.font = `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${fs(font.size || 11)}px ${F_TITLE}`;
-    g.textAlign = cell.align === 'center' ? 'center' : (cell.align === 'right' ? 'right' : 'left');
-    const tx = cell.align === 'center' ? (x0 + x1) / 2 : (cell.align === 'right' ? x1 - fs(2) : x0 + fs(2));
-    g.fillText(cell.text, tx, (y0 + y1) / 2);
-    if (font.underline) { const tw = g.measureText(cell.text).width; const ux = cell.align === 'center' ? tx - tw / 2 : (cell.align === 'right' ? tx - tw : tx); g.beginPath(); g.moveTo(ux, (y0 + y1) / 2 + fs((font.size || 11) * .48)); g.lineTo(ux + tw, (y0 + y1) / 2 + fs((font.size || 11) * .48)); g.stroke(); }
+    const my = (y0 + y1) / 2;
+    // 엑셀 '균등 분할'(distributed): 글자를 칸 너비에 고르게 펼친다.
+    // 한글 양식의 '일 자', '비 고' 같은 라벨이 흔히 이 정렬을 쓴다.
+    if (cell.align === 'distributed' && [...cell.text].length > 1) {
+      const chars = [...cell.text], pad = fs(2);
+      const wid = chars.map(ch => g.measureText(ch).width);
+      const gap = ((x1 - x0 - pad * 2) - wid.reduce((t, w) => t + w, 0)) / (chars.length - 1);
+      g.textAlign = 'left';
+      let cx = x0 + pad;
+      chars.forEach((ch, i) => { g.fillText(ch, cx, my); cx += wid[i] + gap; });
+      continue;
+    }
+    const mid = cell.align === 'center' || cell.align === 'centerContinuous';
+    g.textAlign = mid ? 'center' : (cell.align === 'right' ? 'right' : 'left');
+    const tx = mid ? (x0 + x1) / 2 : (cell.align === 'right' ? x1 - fs(2) : x0 + fs(2));
+    g.fillText(cell.text, tx, my);
+    if (font.underline) { const tw = g.measureText(cell.text).width; const ux = mid ? tx - tw / 2 : (cell.align === 'right' ? tx - tw : tx); g.beginPath(); g.moveTo(ux, my + fs((font.size || 11) * .48)); g.lineTo(ux + tw, my + fs((font.size || 11) * .48)); g.stroke(); }
   }
   g.fillStyle = '#000'; g.strokeStyle = '#000';
 }
