@@ -25,6 +25,19 @@ const colNum = s => [...s].reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - A + 1)
 const colName = n => { let s = ''; while (n > 0) { s = String.fromCharCode(A + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; };
 const ok = (c, m) => console.log(`   ${c ? '✓' : '✗'} ${m}`);
 
+// 윈도우의 'python3' 는 실행하면 스토어를 여는 껍데기라 그대로 쓰면 검사기가 통째로 죽는다.
+// 실제로 파이썬이 뜨는 이름을 한 번만 찾아 둔다.
+const PY = (() => {
+  for (const c of ['python3', 'python']) {
+    try {
+      if (/^\d+\.\d+/.test(execFileSync(c, ['-c', 'import sys;print(sys.version.split()[0])'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim())) return c;
+    } catch (e) { /* 다음 이름으로 */ }
+  }
+  return null;
+})();
+const needPy = what => { if (!PY) throw new Error(`${what}에는 파이썬이 필요합니다 (python3/python 을 찾지 못했습니다).`); return PY; };
+
 /** 검사용 사진 (색이 다른 JPEG 를 즉석에서 만든다) */
 function samplePhotos(n) {
   const dir = path.join(ROOT, 'photos');
@@ -33,13 +46,14 @@ function samplePhotos(n) {
     if (names.length) return names.slice(0, n).map(f => readJpeg(path.join(dir, f)));
   }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'chk'));
-  execFileSync('python3', ['-c', `
+  const out = tmp.replace(/\\/g, '/');      // 윈도우 경로의 \ 는 파이썬 문자열에서 이스케이프로 먹힌다
+  execFileSync(needPy('검사용 사진 만들기'), ['-c', `
 from PIL import Image, ImageDraw
 for i in range(${n}):
     w,h = (1600,1200) if i%2 else (1200,1600)
     im = Image.new('RGB',(w,h),(60+i*25,120,200-i*20))
     ImageDraw.Draw(im).rectangle([w//6,h//6,w*5//6,h*5//6],outline=(255,255,0),width=12)
-    im.save('${tmp}/p%d.jpg'%i, quality=80)`]);
+    im.save('${out}/p%d.jpg'%i, quality=80)`]);
   return fs.readdirSync(tmp).sort().map(f => readJpeg(path.join(tmp, f)));
 }
 
@@ -180,7 +194,7 @@ function checkPrint(file, form) {
   const cells = form.slots.flatMap(s => s.rows.filter(l => l.row === row).flatMap(l => l.cells))
     .sort((a, b) => a.cols[0] - b.cols[0]);
   const want = cells.map(c => form.cols.slice(c.cols[0] - 1, c.cols[1]).reduce((a, b) => a + b, 0));
-  const out = execFileSync('python3', [path.join(__dirname, 'rules.py'), pdf, String(cells.length)], { encoding: 'utf8' }).trim();
+  const out = execFileSync(needPy('인쇄 결과 검사'), [path.join(__dirname, 'rules.py'), pdf, String(cells.length)], { encoding: 'utf8' }).trim();
   if (!out) { ok(false, '인쇄 결과에서 표를 찾지 못함'); return false; }
   const got = out.split(' ').map(Number);
   const norm = a => a.map(v => v / a.reduce((x, y) => x + y, 0));
@@ -191,9 +205,98 @@ function checkPrint(file, form) {
   return diff < 0.02;
 }
 
+/** 아직 등록하지 않은 양식(앱에 올리는 그 파일)이 원본 그대로 뽑혔는지.
+ *  화면·PDF 는 원본을 변환하는 게 아니라 추출한 정의로 다시 그리므로,
+ *  정의가 원본과 한 칸이라도 다르면 그만큼 화면이 원본과 달라진다. */
+async function checkUpload(file) {
+  const { analyze } = require(path.join(__dirname, 'add-form.js'));
+  const def = await analyze(file, { id: 'chk', name: path.basename(file) });
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(file);
+  const ws = (def.sheet && wb.getWorksheet(def.sheet)) || wb.worksheets[0];
+  const bs = def.blockStart, be = bs + def.block - 1;
+  console.log(`   블록 ${bs}~${be}행 · 사진 ${def.perPage}장 · ${def.cols.length}열` +
+              ` · 항목 [${[...new Set(def.slots.flatMap(s => s.rows.flatMap(l =>
+                 l.cells.filter(c => c.field).map(c => c.field))))].join(', ')}]`);
+  let good = true;
+  const fail = (m, list) => { good = false; ok(false, m); (list || []).slice(0, 8).forEach(x => console.log('      ' + x)); };
+
+  // 열 폭·행 높이
+  const cw = def.cols.filter((w, i) => Math.abs((ws.getColumn(i + 1).width || 8.43) - w) > 0.01);
+  cw.length ? fail(`열 폭 ${cw.length}개 어긋남`) : ok(true, `열 폭 ${def.cols.length}개`);
+  const rh = def.rows.filter((h, i) => Math.abs((ws.getRow(i + 1).height || 16.5) - h) > 0.01);
+  rh.length ? fail(`행 높이 ${rh.length}개 어긋남`) : ok(true, `행 높이 ${def.rows.length}개`);
+
+  // 정의가 그리는 칸이 원본의 병합 범위와 같은가
+  const merges = new Set(ws.model.merges || []);
+  const spanBad = def.templateCells.filter(c =>
+    (c.c !== c.c2 || c.r !== c.r2) && !merges.has(`${colName(c.c)}${c.r}:${colName(c.c2)}${c.r2}`));
+  spanBad.length ? fail('병합 범위가 원본과 다름',
+    spanBad.map(c => `${colName(c.c)}${c.r}:${colName(c.c2)}${c.r2}`)) : ok(true, '병합 범위');
+
+  // 테두리 — 네 변은 각각 그 변에 닿은 칸에 저장돼 있다
+  const bordBad = [];
+  for (const c of def.templateCells) {
+    for (const [side, cell] of [['left', [c.r, c.c]], ['right', [c.r, c.c2]],
+                                ['top', [c.r, c.c]], ['bottom', [c.r2, c.c]]]) {
+      const src = ((ws.getCell(cell[0], cell[1]).border || {})[side] || {}).style || null;
+      const got = c.borders[side] || null;
+      // 블록 끝줄의 아래선은 다음 블록의 윗선에서 빌려 오므로 원본에 없어도 정상이다
+      if (src !== got && !(side === 'bottom' && c.r2 === be && got && !src)) {
+        bordBad.push(`${colName(c.c)}${c.r} ${side}: 원본 ${src || '없음'} → 정의 ${got || '없음'}`);
+      }
+    }
+  }
+  bordBad.length ? fail(`테두리 ${bordBad.length}군데 어긋남`, bordBad) : ok(true, '테두리');
+
+  // 정렬 — 균등분할(distributed) 같은 값이 빠지면 글자가 엉뚱한 쪽에 붙는다
+  const alBad = def.templateCells.filter(c =>
+    c.text && ((ws.getCell(c.r, c.c).alignment || {}).horizontal || 'left') !== c.align)
+    .map(c => `${colName(c.c)}${c.r} "${c.text}"`);
+  alBad.length ? fail(`정렬 ${alBad.length}군데 어긋남`, alBad) : ok(true, '글자 정렬');
+
+  // 화면이 모르는 정렬은 조용히 왼쪽으로 떨어진다 (균등분할을 놓쳐 라벨이 왼쪽에 붙은 적이 있다)
+  const DRAWN = new Set(['left', 'center', 'right', 'centerContinuous', 'distributed', 'justify', 'general']);
+  const used = [...new Set(def.templateCells.filter(c => c.text).map(c => c.align))];
+  const unknown = used.filter(a => !DRAWN.has(a));
+  unknown.length ? fail(`화면이 그릴 줄 모르는 정렬: ${unknown.join(', ')}`)
+                 : ok(true, `쓰인 정렬 [${used.join(', ')}]`);
+
+  // 사람이 채울 칸에 견본 값이 남아 있으면 지워지지 않는 글자가 된다
+  const dyn = new Set();
+  for (const s of def.slots) for (const l of s.rows) for (const c of l.cells) if (c.field) dyn.add(`${l.row}:${c.cols[0]}`);
+  const stuck = def.templateCells.filter(c => c.text && dyn.has(`${c.r}:${c.c}`))
+    .map(c => `${colName(c.c)}${c.r} "${c.text}"`);
+  stuck.length ? fail('입력칸에 견본 글자가 박혀 있음', stuck) : ok(true, '입력칸 비어 있음');
+
+  // 라벨마다 값칸이 하나씩 있어야 한다 (견본 값을 라벨로 오인하면 입력칸이 사라진다)
+  const lost = [];
+  for (const s of def.slots) for (const l of s.rows) {
+    const cs = l.cells;
+    cs.forEach((c, i) => { if (c.label && !(cs[i + 1] && cs[i + 1].field)) lost.push(`${l.row}행 "${c.label}"`); });
+  }
+  lost.length ? fail('라벨에 값칸이 없음 — 입력칸이 사라짐', lost) : ok(true, '라벨마다 입력칸 있음');
+
+  // 수식·날짜 칸이 글자로 새어 나오지 않았는가
+  const junk = def.templateCells.filter(c => /\[object|GMT|Invalid Date/.test(c.text))
+    .map(c => `${colName(c.c)}${c.r} "${c.text}"`);
+  junk.length ? fail('셀 값이 글자로 잘못 변환됨', junk) : ok(true, '글자 변환');
+
+  return good;
+}
+
 (async () => {
   const args = process.argv.slice(2);
   const wantPdf = args.includes('--pdf');
+  const fi = args.indexOf('--file');
+  if (fi >= 0) {
+    const f = args[fi + 1];
+    if (!f) { console.error('사용법: node tools/check.js --file <양식.xlsx>'); process.exit(1); }
+    console.log(`\n■ ${path.basename(f)}`);
+    const good = await checkUpload(f).catch(e => { ok(false, e.message); return false; });
+    console.log(`\n${good ? '원본 그대로 나옵니다' : '원본과 다르게 나옵니다'}`);
+    process.exit(good ? 0 : 1);
+  }
   const only = args.filter(a => !a.startsWith('--'));
   const list = forms().filter(f => !only.length || only.includes(f.id));
   const photos = samplePhotos(5);
