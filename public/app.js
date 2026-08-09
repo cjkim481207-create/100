@@ -594,6 +594,8 @@ function selectForm(id) {
   render();
 }
 
+// 카톡 등 인앱 브라우저에서는 window.prompt/confirm이 막혀 있어 자체 모달을 쓴다.
+let delArmed = false;
 function renameTab() {
   const mine = !!custom[FORM.id];
   $('renameInput').value = formName(FORM);
@@ -610,13 +612,13 @@ function closeRenameModal() {
 }
 
 function saveRenameModal() {
+  const mine = !!custom[FORM.id];
   const t = $('renameInput').value.trim();
   store.set('name:' + FORM.id, t || FORM.name);
   renderTabs();
   closeRenameModal();
 }
 
-let delArmed = false;
 function deleteRenameModal() {
   const del = $('renameDel');
   if (!delArmed) { delArmed = true; del.textContent = '정말 삭제할까요? (다시 누르면 삭제)'; return; }
@@ -637,7 +639,7 @@ async function removeForm(id) {
 }
 
 /** 엑셀 양식 파일을 올리면 서버가 칸 위치를 읽어 새 탭으로 추가한다 */
-async function addForm(file, retryOpts) {
+async function addForm(file) {
   if (!file) return;
   status('양식 분석 중…');
   try {
@@ -646,11 +648,9 @@ async function addForm(file, retryOpts) {
     for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
     const data = btoa(bin);
     const name = file.name.replace(/\.xlsx?$/i, '');
-    const body = { name, data };
-    if (retryOpts) Object.assign(body, retryOpts);
     const res = await fetch('/api/analyze', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ name, data }),
     });
     const def = await res.json();
     if (!res.ok) throw new Error(def.error || '인식 실패');
@@ -665,25 +665,8 @@ async function addForm(file, retryOpts) {
     render();
     status(`✅ '${name}' 추가 — 사진 ${def.perPage}장/페이지, 항목 [${FIELDS.map(f => f.label).join(', ') || '없음'}]`);
   } catch (e) {
-      if (e.message.includes('1페이지 행 수') && !retryOpts) {
-        status('⚠️ 블록 행 수를 입력해 주세요.');
-        const dlg = $('blockDialog');
-        const inp = $('blockInput');
-        inp.value = '16';
-        dlg.style.display = 'flex';
-        inp.focus();
-        inp.select();
-        const p = new Promise(res => {
-          $('blockConfirm').onclick = () => { dlg.style.display = ''; res(inp.value); };
-          $('blockCancel').onclick = () => { dlg.style.display = ''; res(null); };
-        });
-        const block = await p;
-        if (block && /^\d+$/.test(block)) {
-          return addForm(file, { block: +block });
-        }
-      }
-      status('⚠️ 양식 추가 실패: ' + e.message);
-    }
+    status('⚠️ 양식 추가 실패: ' + e.message);
+  }
 }
 
 async function loadForms() {
@@ -738,15 +721,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     await addFiles([...e.target.files]);
     e.target.value = '';
   });
+  $('renameSave').addEventListener('click', saveRenameModal);
+  $('renameCancel').addEventListener('click', closeRenameModal);
+  $('renameDel').addEventListener('click', deleteRenameModal);
+  $('renameInput').addEventListener('keydown', e => { if (e.key === 'Enter') saveRenameModal(); });
   $('btnSharePdf').addEventListener('click', () => share('pdf'));
   $('btnShareXlsx').addEventListener('click', () => share('xlsx'));
   $('btnPdf').addEventListener('click', () => save('pdf'));
   $('btnXlsx').addEventListener('click', () => save('xlsx'));
-    $('renameSave').addEventListener('click', saveRenameModal);
-    $('renameCancel').addEventListener('click', closeRenameModal);
-    $('renameDel').addEventListener('click', deleteRenameModal);
-    $('renameInput').addEventListener('keydown', e => { if (e.key === 'Enter') saveRenameModal(); });
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
   setupInApp();
   await loadShared();
 });

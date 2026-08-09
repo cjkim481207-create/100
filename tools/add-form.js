@@ -93,17 +93,105 @@ function analyzeBook(wb, opt) {
     if (!title) throw new Error('제목 칸(예: "사 진 대 지")을 찾지 못했습니다.');
     const lastCol = title.c2;
     const titleText = textOf(ws.getCell(title.r1, title.c1).value);
-    const blockStart = opt.blockstart || title.r1;
-    const titleInBlock = title.r1 >= blockStart;
+    let blockStart = opt.blockstart || title.r1;
 
-    // 2) 1페이지 행 수: 같은 제목이 다시 나오는 간격 + 폴백 (제목이 한 번만 나오면 시트 전체 행 수로 추정)
+    // 사진칸(큰 병합)과 그 아래 위치·내용 항목표를 찾는 도우미.
+    // block 크기를 아직 모를 때도 넉넉한 상한을 주고 먼저 훑어볼 수 있도록 분리해 둔다.
+    const heightOf = m => { let h = 0; for (let r = m.r1; r <= m.r2; r++) h += ws.getRow(r).height || 16.5; return h; };
+    // 테두리는 병합보다 넓을 수 있다 → 위쪽 행에서 좌우 테두리 위치를 확인
+    const boxCols = (box, siblings) => {
+      const others = (siblings || []).filter(b => b !== box);
+      const lo = Math.max(1, ...others.filter(b => b.c2 < box.c1).map(b => b.c2 + 1));
+      const hi = Math.min(lastCol, ...others.filter(b => b.c1 > box.c2).map(b => b.c1 - 1));
+      let c0 = box.c1, c1 = box.c2;
+      for (let c = lo; c <= hi; c++) {
+        const b = ws.getCell(box.r1, c).border || {};
+        if (b.left && b.left.style && c < c0) c0 = c;
+        if (b.right && b.right.style && c > c1) c1 = c;
+      }
+      return [c0, c1];
+    };
+    const rowRegions = r => {                       // 한 행을 병합 단위로 나눈다
+      const out = [];
+      for (let c = 1; c <= lastCol;) {
+        const m = merges.find(x => x.r1 <= r && x.r2 >= r && x.c1 === c);
+        const c2 = m ? Math.min(m.c2, lastCol) : c;
+        out.push({ cols: [c, c2], text: textOf(ws.getCell(r, c).value) });
+        c = c2 + 1;
+      }
+      return out;
+    };
+    // 사진칸(비어 있는 큰 병합)과 그 아래 위치·내용 항목표를 boundEnd 행까지 찾는다
+    function findSlots(boundEnd) {
+      const boxes = merges
+        .filter(m => m.r1 >= blockStart && m.r2 <= boundEnd && m.c2 - m.c1 >= 2
+                  && !textOf(ws.getCell(m.r1, m.c1).value).trim()
+                  && (m.r2 - m.r1 >= 4 || heightOf(m) >= 100))
+        .sort((a, b) => a.r1 - b.r1);
+      // 같은 행 범위에 놓인 사진칸끼리 묶는다 (좌·우 배치)
+      const groups = [];
+      for (const b of boxes) {
+        const g = groups.find(x => x.r1 === b.r1 && x.r2 === b.r2);
+        if (g) g.boxes.push(b); else groups.push({ r1: b.r1, r2: b.r2, boxes: [b] });
+      }
+      groups.forEach(g => g.boxes.sort((a, b) => a.c1 - b.c1));
+      const slots = [];
+      groups.forEach((g, gi) => {
+        const until = groups[gi + 1] ? groups[gi + 1].r1 - 1 : boundEnd;
+        const lines = [];
+        for (let r = g.r2 + 1; r <= until; r++) {
+          const regions = rowRegions(r);
+          if (regions.some(x => fieldOf(x.text))) lines.push({ row: r, regions });
+        }
+        for (const box of g.boxes) {
+          const [bc0, bc1] = boxCols(box, g.boxes);
+          const tableRows = [];
+          for (const line of lines) {
+            const cells = [];
+            let pending = null;
+            for (const x of line.regions) {
+              if (x.cols[1] < bc0 || x.cols[0] > bc1) continue;    // 이 사진칸의 열 범위만
+              const f = fieldOf(x.text);
+              if (f) { cells.push({ cols: x.cols, label: x.text }); pending = f; }
+              else if (pending) { cells.push({ cols: x.cols, field: pending }); pending = null; }
+              else cells.push({ cols: x.cols });
+            }
+            if (cells.length) tableRows.push({ row: line.row, cells });
+          }
+          if (tableRows.length) slots.push({ box: { rows: [box.r1, box.r2], cols: [bc0, bc1] }, rows: tableRows });
+        }
+      });
+      return { boxes, slots };
+    }
+
+    // 2) 1페이지 행 수: 같은 제목이 다시 나오는 간격.
+    // 제목이 한 번만 나오는 양식(대부분의 새 업로드)은 사진칸·항목표가 끝나는 곳까지를 한 블록으로 본다.
     const same = titles.filter(t => textOf(ws.getCell(t.r1, t.c1).value) === titleText).map(t => t.r1);
     let block = opt.block || (same.length > 1 ? same[1] - same[0] : 0);
     if (!block) {
-      block = ws.rowCount - blockStart + 1;      // 제목이 한 번만 나오면 시트 전체 행 수로 추정
-      if (block < 5) throw new Error('1페이지 행 수를 찾지 못했습니다. --block 30 처럼 지정해 주세요.');
+      const probe = findSlots(blockStart + 500);
+      // 사진칸이 일정한 간격으로 3번 이상 반복되면, 한 시트 안에 여러 페이지 분량이
+      // 이어 붙어 있는 것이다 (예: 몇 달치 사진대지를 한 시트에 쭉 이어 만든 파일).
+      // 이때는 시트 전체가 아니라 그 반복 간격 하나를 한 페이지(블록)로 본다.
+      const groupRows = [...new Set(probe.boxes.map(b => b.r1))].sort((a, b) => a - b);
+      const deltas = groupRows.slice(1).map((r, i) => r - groupRows[i]);
+      const period = deltas[0];
+      if (groupRows.length >= 3 && deltas.every(d => d === period)) {
+        const firstGroupSlots = probe.slots.filter(s => s.box.rows[0] === groupRows[0]);
+        const lastRow = firstGroupSlots.reduce((m, s) => Math.max(m, ...s.rows.map(r => r.row)), groupRows[0]);
+        if (lastRow - period + 1 > 0) {
+          block = period;
+          if (!opt.blockstart) blockStart = lastRow - period + 1;
+        }
+      }
+      if (!block) {
+        const last = probe.slots.reduce((m, s) => Math.max(m, s.box.rows[1], ...s.rows.map(r => r.row)), 0);
+        if (last > blockStart) block = last - blockStart + 1;
+      }
     }
+    if (!block) throw new Error('1페이지 행 수를 찾지 못했습니다. --block 30 처럼 지정해 주세요.');
     const blockEnd = blockStart + block - 1;
+    const titleInBlock = title.r1 >= blockStart;
 
     // 3) 열 너비 · 행 높이
     const cols = [];
@@ -149,76 +237,9 @@ function analyzeBook(wb, opt) {
       }
     }
 
-    // 5) 사진칸: 블록 안의 '비어 있는 큰 병합' (여러 행짜리 또는 한 행이 아주 높은 것)
-    const heightOf = m => { let h = 0; for (let r = m.r1; r <= m.r2; r++) h += ws.getRow(r).height || 16.5; return h; };
-    const boxes = merges
-      .filter(m => m.r1 >= blockStart && m.r2 <= blockEnd && m.c2 - m.c1 >= 2
-                && !textOf(ws.getCell(m.r1, m.c1).value).trim()
-                && (m.r2 - m.r1 >= 4 || heightOf(m) >= 100))
-      .sort((a, b) => a.r1 - b.r1);
+    // 5) 사진칸과 그 아래 항목 표 — block 크기가 확정된 최종 범위로 다시 찾는다
+    const { boxes, slots } = findSlots(blockEnd);
     if (!boxes.length) throw new Error('사진칸(큰 병합 영역)을 찾지 못했습니다.');
-
-    // 테두리는 병합보다 넓을 수 있다 → 위쪽 행에서 좌우 테두리 위치를 확인
-    const boxCols = (box, siblings) => {
-      const others = (siblings || []).filter(b => b !== box);
-      const lo = Math.max(1, ...others.filter(b => b.c2 < box.c1).map(b => b.c2 + 1));
-      const hi = Math.min(lastCol, ...others.filter(b => b.c1 > box.c2).map(b => b.c1 - 1));
-      let c0 = box.c1, c1 = box.c2;
-      for (let c = lo; c <= hi; c++) {
-        const b = ws.getCell(box.r1, c).border || {};
-        if (b.left && b.left.style && c < c0) c0 = c;
-        if (b.right && b.right.style && c > c1) c1 = c;
-      }
-      return [c0, c1];
-    };
-
-    // 6) 각 사진칸 아래의 항목 표
-    const rowRegions = r => {                       // 한 행을 병합 단위로 나눈다
-      const out = [];
-      for (let c = 1; c <= lastCol;) {
-        const m = merges.find(x => x.r1 <= r && x.r2 >= r && x.c1 === c);
-        const c2 = m ? Math.min(m.c2, lastCol) : c;
-        out.push({ cols: [c, c2], text: textOf(ws.getCell(r, c).value) });
-        c = c2 + 1;
-      }
-      return out;
-    };
-
-    // 같은 행 범위에 놓인 사진칸끼리 묶는다 (좌·우 배치)
-    const groups = [];
-    for (const b of boxes) {
-      const g = groups.find(x => x.r1 === b.r1 && x.r2 === b.r2);
-      if (g) g.boxes.push(b); else groups.push({ r1: b.r1, r2: b.r2, boxes: [b] });
-    }
-    groups.forEach(g => g.boxes.sort((a, b) => a.c1 - b.c1));
-
-    const slots = [];
-    groups.forEach((g, gi) => {
-      const until = groups[gi + 1] ? groups[gi + 1].r1 - 1 : blockEnd;
-      const lines = [];
-      for (let r = g.r2 + 1; r <= until; r++) {
-        const regions = rowRegions(r);
-        if (regions.some(x => fieldOf(x.text))) lines.push({ row: r, regions });
-      }
-      for (const box of g.boxes) {
-        const [bc0, bc1] = boxCols(box, g.boxes);
-        const tableRows = [];
-        for (const line of lines) {
-          const cells = [];
-          let pending = null;
-          for (const x of line.regions) {
-            if (x.cols[1] < bc0 || x.cols[0] > bc1) continue;    // 이 사진칸의 열 범위만
-            const f = fieldOf(x.text);
-            if (f) { cells.push({ cols: x.cols, label: x.text }); pending = f; }
-            else if (pending) { cells.push({ cols: x.cols, field: pending }); pending = null; }
-            else cells.push({ cols: x.cols });
-          }
-          if (cells.length) tableRows.push({ row: line.row, cells });
-        }
-        if (tableRows.length) slots.push({ box: { rows: [box.r1, box.r2], cols: [bc0, bc1] }, rows: tableRows });
-      }
-    });
-
     if (!slots.length) throw new Error('위치·내용 항목칸을 찾지 못했습니다.');
 
     const label = slots[0].rows[0].cells.find(c => c.label);
