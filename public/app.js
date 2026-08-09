@@ -656,18 +656,23 @@ async function addForm(file) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, data }),
     });
-    const def = await res.json();
-    if (!res.ok) throw new Error(def.error || '인식 실패');
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || '인식 실패');
+    // 서버는 정의와 함께 '사진을 걷어낸 빈 양식'을 돌려준다. 지난달 사진이 든 보고서를
+    // 그대로 두면 새 사진과 겹쳐 찍히고 파일도 몇 MB씩 무거워지므로 이쪽을 저장한다.
+    const def = body.def || body;
+    const keep = body.template || data;
 
-    custom[def.id] = { id: def.id, def, data };
-    await idb.put({ id: def.id, def, data });
+    custom[def.id] = { id: def.id, def, data: keep };
+    await idb.put({ id: def.id, def, data: keep });
     FORMS = FORMS.concat([def]);
     store.set('form', def.id);
     useForm(def);
     invalidate();
     renderTabs();
     render();
-    status(`✅ '${name}' 추가 — 사진 ${def.perPage}장/페이지, 항목 [${FIELDS.map(f => f.label).join(', ') || '없음'}]`);
+    const wiped = body.removed ? `, 양식에 있던 사진 ${body.removed}장 제거` : '';
+    status(`✅ '${name}' 추가 — 사진 ${def.perPage}장/페이지, 항목 [${FIELDS.map(f => f.label).join(', ') || '없음'}]${wiped}`);
   } catch (e) {
     status('⚠️ 양식 추가 실패: ' + e.message);
   }
