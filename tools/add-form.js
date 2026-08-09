@@ -23,10 +23,15 @@ const FIELDS = [
   [/^(비고|비 고)$/, 'bigo'],
 ];
 const LABEL_RE = /^[가-힣A-Za-z][가-힣A-Za-z0-9()\/·]{0,9}$/;
-const fieldOf = text => {
+// 확실히 아는 항목명 (위 표에 있는 것)
+const knownField = text => {
   const t = String(text).replace(/\s+/g, '');
   for (const [re, f] of FIELDS) if (re.test(t)) return f;
-  return LABEL_RE.test(t) ? t : null;      // 모르는 항목명도 그대로 입력칸으로
+  return null;
+};
+const fieldOf = text => {
+  const t = String(text).replace(/\s+/g, '');
+  return knownField(t) || (LABEL_RE.test(t) ? t : null);   // 모르는 항목명도 그대로 입력칸으로
 };
 const TITLE_RE = /(사진대지|사진첩|사진목록)/;
 const sheetHasTitle = ws => {
@@ -177,8 +182,11 @@ function analyzeBook(wb, opt) {
             for (const x of line.regions) {
               if (x.cols[1] < bc0 || x.cols[0] > bc1) continue;    // 이 사진칸의 열 범위만
               const f = fieldOf(x.text);
-              if (f) { cells.push({ cols: x.cols, label: x.text }); pending = f; }
-              else if (pending) { cells.push({ cols: x.cols, field: pending }); pending = null; }
+              // 라벨을 만난 직후 칸은 그 라벨의 값칸이다. 양식에 견본 값('기초타설' 같은)이
+              // 적혀 있어도 라벨로 오인하지 않는다 — 그러면 입력칸이 통째로 사라진다.
+              // 단 '일자'처럼 확실히 아는 항목명이면 그건 다음 라벨이다.
+              if (pending && !knownField(x.text)) { cells.push({ cols: x.cols, field: pending }); pending = null; }
+              else if (f) { cells.push({ cols: x.cols, label: x.text }); pending = f; }
               else cells.push({ cols: x.cols });
             }
             if (cells.length) tableRows.push({ row: line.row, cells });
