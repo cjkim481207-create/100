@@ -594,14 +594,35 @@ function selectForm(id) {
   render();
 }
 
+// 카톡 등 인앱 브라우저에서는 window.prompt/confirm이 막혀 있어 자체 모달을 쓴다.
+let delArmed = false;
 function renameTab() {
   const mine = !!custom[FORM.id];
-  const name = prompt(mine ? '탭 이름 (비우면 이 양식을 지웁니다)' : '탭 이름', formName(FORM));
-  if (name === null) return;
-  const t = name.trim();
-  if (t) { store.set('name:' + FORM.id, t); renderTabs(); return; }
-  if (!mine) { store.set('name:' + FORM.id, FORM.name); renderTabs(); return; }
-  if (!confirm(`'${formName(FORM)}' 양식을 지울까요?`)) return;
+  $('renameInput').value = formName(FORM);
+  const del = $('renameDel');
+  del.hidden = !mine;
+  del.textContent = '양식 삭제';
+  delArmed = false;
+  $('renameModal').classList.add('show');
+  $('renameInput').focus();
+}
+
+function closeRenameModal() {
+  $('renameModal').classList.remove('show');
+}
+
+function saveRenameModal() {
+  const mine = !!custom[FORM.id];
+  const t = $('renameInput').value.trim();
+  store.set('name:' + FORM.id, t || FORM.name);
+  renderTabs();
+  closeRenameModal();
+}
+
+function deleteRenameModal() {
+  const del = $('renameDel');
+  if (!delArmed) { delArmed = true; del.textContent = '정말 삭제할까요? (다시 누르면 삭제)'; return; }
+  closeRenameModal();
   removeForm(FORM.id);
 }
 
@@ -700,6 +721,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     await addFiles([...e.target.files]);
     e.target.value = '';
   });
+  $('renameSave').addEventListener('click', saveRenameModal);
+  $('renameCancel').addEventListener('click', closeRenameModal);
+  $('renameDel').addEventListener('click', deleteRenameModal);
+  $('renameInput').addEventListener('keydown', e => { if (e.key === 'Enter') saveRenameModal(); });
   $('btnSharePdf').addEventListener('click', () => share('pdf'));
   $('btnShareXlsx').addEventListener('click', () => share('xlsx'));
   $('btnPdf').addEventListener('click', () => save('pdf'));
