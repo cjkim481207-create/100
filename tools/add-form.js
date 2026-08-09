@@ -62,9 +62,16 @@ function templateCells(ws, merges, lastCol, blockEnd, dynamic) {
     const fill = cell.fill && cell.fill.type === 'pattern' ? rgb(cell.fill.fgColor) : null;
     const borders = {};
     for (const side of ['left', 'right', 'top', 'bottom']) if (b[side] && b[side].style) borders[side] = b[side].style;
+    const r2 = merged ? merged.r2 : r, c2 = merged ? merged.c2 : c;
+    // 반복되는 블록끼리 경계선을 나눠 가진 원본이 많다(내 칸엔 top만, 다음 블록 칸엔 top만 있고
+    // 그게 시각적으로 이어지는 식). 블록을 한 덩어리만 떼어 쓰면 그 아래쪽 줄이 끊겨 보이므로,
+    // 블록의 마지막 행에서 bottom이 없으면 바로 다음 행의 top 테두리를 빌려 채운다.
+    if (r2 === blockEnd && !borders.bottom) {
+      const below = ws.getCell(blockEnd + 1, c).border || {};
+      if (below.top && below.top.style) borders.bottom = below.top.style;
+    }
     const text = textOf(cell.value);
     if (!text && !fill && !Object.keys(borders).length) continue;
-    const r2 = merged ? merged.r2 : r, c2 = merged ? merged.c2 : c;
     out.push({ r, c, r2, c2, text: dynamic.has(`${r}:${c}`) ? '' : text,
       fill, borders, font: { size: f.size || 11, bold: !!f.bold, italic: !!f.italic,
         underline: !!f.underline, color: rgb(f.color) }, align: a.horizontal || 'left' });
