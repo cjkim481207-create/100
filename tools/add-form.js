@@ -58,11 +58,17 @@ function templateCells(ws, merges, lastCol, blockEnd, dynamic) {
   for (let r = 1; r <= blockEnd; r++) for (let c = 1; c <= lastCol; c++) {
     const merged = merges.find(m => m.r1 <= r && m.r2 >= r && m.c1 <= c && m.c2 >= c);
     if (merged && (merged.r1 !== r || merged.c1 !== c)) continue;
-    const cell = ws.getCell(r, c), b = cell.border || {}, f = cell.font || {}, a = cell.alignment || {};
+    const cell = ws.getCell(r, c), f = cell.font || {}, a = cell.alignment || {};
     const fill = cell.fill && cell.fill.type === 'pattern' ? rgb(cell.fill.fgColor) : null;
-    const borders = {};
-    for (const side of ['left', 'right', 'top', 'bottom']) if (b[side] && b[side].style) borders[side] = b[side].style;
     const r2 = merged ? merged.r2 : r, c2 = merged ? merged.c2 : c;
+    // 병합된 칸의 테두리는 네 변이 각각 그 변에 닿은 칸에 나뉘어 저장된다.
+    // 왼쪽 위 칸만 읽으면 오른쪽·아래 선이 통째로 빠져 미리보기에서 끊겨 보인다.
+    const edge = { left: [r, c], right: [r, c2], top: [r, c], bottom: [r2, c] };
+    const borders = {};
+    for (const side of ['left', 'right', 'top', 'bottom']) {
+      const b = (ws.getCell(edge[side][0], edge[side][1]).border || {})[side];
+      if (b && b.style) borders[side] = b.style;
+    }
     // 반복되는 블록끼리 경계선을 나눠 가진 원본이 많다(내 칸엔 top만, 다음 블록 칸엔 top만 있고
     // 그게 시각적으로 이어지는 식). 블록을 한 덩어리만 떼어 쓰면 그 아래쪽 줄이 끊겨 보이므로,
     // 블록의 마지막 행에서 bottom이 없으면 바로 다음 행의 top 테두리를 빌려 채운다.
