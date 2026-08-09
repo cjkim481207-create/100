@@ -96,10 +96,13 @@ function analyzeBook(wb, opt) {
     const blockStart = opt.blockstart || title.r1;
     const titleInBlock = title.r1 >= blockStart;
 
-    // 2) 1페이지 행 수: 같은 제목이 다시 나오는 간격
+    // 2) 1페이지 행 수: 같은 제목이 다시 나오는 간격 + 폴백 (제목이 한 번만 나오면 시트 전체 행 수로 추정)
     const same = titles.filter(t => textOf(ws.getCell(t.r1, t.c1).value) === titleText).map(t => t.r1);
     let block = opt.block || (same.length > 1 ? same[1] - same[0] : 0);
-    if (!block) throw new Error('1페이지 행 수를 찾지 못했습니다. --block 30 처럼 지정해 주세요.');
+    if (!block) {
+      block = ws.rowCount - blockStart + 1;      // 제목이 한 번만 나오면 시트 전체 행 수로 추정
+      if (block < 5) throw new Error('1페이지 행 수를 찾지 못했습니다. --block 30 처럼 지정해 주세요.');
+    }
     const blockEnd = blockStart + block - 1;
 
     // 3) 열 너비 · 행 높이
