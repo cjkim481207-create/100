@@ -35,8 +35,20 @@ const sheetHasTitle = ws => {
       if (TITLE_RE.test(textOf(ws.getCell(r, c).value).replace(/\s+/g, ''))) return true;
   return false;
 };
-const textOf = v => (v && typeof v === 'object' && v.richText)
-  ? v.richText.map(r => r.text).join('') : (v == null ? '' : String(v));
+// 수식·날짜 셀은 실제 제출 문서(빈 양식이 아니라 이미 채워 넣은 파일)를 업로드하면 자주 섞여 들어온다.
+// String(v)로 그대로 찍으면 "[object Object]" 같은 값이 정적 머리글 텍스트로 그대로 박제된다.
+const textOf = v => {
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    if (v.richText) return v.richText.map(r => r.text).join('');
+    if (v instanceof Date) return '';                  // 날짜 값은 정적 텍스트로 쓰지 않는다
+    if ('result' in v) return v.result == null ? '' : String(v.result);   // 수식 셀(계산 결과)
+    if ('formula' in v) return '';                      // 계산 결과가 캐시되지 않은 수식
+    if ('text' in v) return String(v.text);              // 하이퍼링크 등
+    return '';
+  }
+  return String(v);
+};
 
 // 브라우저 미리보기/PDF에서도 엑셀 원본의 표·채움·글꼴을 재현할 수 있도록
 // 첫 양식 블록의 셀 서식을 간결한 JSON으로 보관한다.
@@ -50,9 +62,16 @@ function templateCells(ws, merges, lastCol, blockEnd, dynamic) {
     const fill = cell.fill && cell.fill.type === 'pattern' ? rgb(cell.fill.fgColor) : null;
     const borders = {};
     for (const side of ['left', 'right', 'top', 'bottom']) if (b[side] && b[side].style) borders[side] = b[side].style;
+    const r2 = merged ? merged.r2 : r, c2 = merged ? merged.c2 : c;
+    // 반복되는 블록끼리 경계선을 나눠 가진 원본이 많다(내 칸엔 top만, 다음 블록 칸엔 top만 있고
+    // 그게 시각적으로 이어지는 식). 블록을 한 덩어리만 떼어 쓰면 그 아래쪽 줄이 끊겨 보이므로,
+    // 블록의 마지막 행에서 bottom이 없으면 바로 다음 행의 top 테두리를 빌려 채운다.
+    if (r2 === blockEnd && !borders.bottom) {
+      const below = ws.getCell(blockEnd + 1, c).border || {};
+      if (below.top && below.top.style) borders.bottom = below.top.style;
+    }
     const text = textOf(cell.value);
     if (!text && !fill && !Object.keys(borders).length) continue;
-    const r2 = merged ? merged.r2 : r, c2 = merged ? merged.c2 : c;
     out.push({ r, c, r2, c2, text: dynamic.has(`${r}:${c}`) ? '' : text,
       fill, borders, font: { size: f.size || 11, bold: !!f.bold, italic: !!f.italic,
         underline: !!f.underline, color: rgb(f.color) }, align: a.horizontal || 'left' });
