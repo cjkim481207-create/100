@@ -635,10 +635,9 @@ function selectForm(id) {
 // 카톡 등 인앱 브라우저에서는 window.prompt/confirm이 막혀 있어 자체 모달을 쓴다.
 let delArmed = false;
 function renameTab() {
-  const mine = !!custom[FORM.id];
   $('renameInput').value = formName(FORM);
   const del = $('renameDel');
-  del.hidden = !mine;
+  del.hidden = FORMS.length <= 1;   // 탭이 하나뿐이면 지울 수 없게 막는다
   del.textContent = '양식 삭제';
   delArmed = false;
   $('renameModal').classList.add('show');
@@ -650,7 +649,6 @@ function closeRenameModal() {
 }
 
 function saveRenameModal() {
-  const mine = !!custom[FORM.id];
   const t = $('renameInput').value.trim();
   store.set('name:' + FORM.id, t || FORM.name);
   renderTabs();
@@ -664,10 +662,16 @@ function deleteRenameModal() {
   removeForm(FORM.id);
 }
 
+/** 기본 제공 양식(daeji2 등)은 코드에 있는 정의라 지울 수 없다 —
+ *  대신 '이 기기에서 숨김' 목록에 넣어 탭 목록에서만 빼준다. */
+const hiddenForms = () => { try { return new Set(JSON.parse(store.get('hiddenForms') || '[]')); } catch (e) { return new Set(); } };
+const setHiddenForms = s => store.set('hiddenForms', JSON.stringify([...s]));
+
 async function removeForm(id) {
-  await idb.del(id);
-  delete custom[id];
+  if (custom[id]) { await idb.del(id); delete custom[id]; }
+  else { const h = hiddenForms(); h.add(id); setHiddenForms(h); }
   FORMS = FORMS.filter(f => f.id !== id);
+  if (!FORMS.length) { location.reload(); return; }   // 안전장치 (평소엔 여기 안 옴)
   useForm(FORMS[0]);
   store.set('form', FORMS[0].id);
   invalidate();
@@ -681,21 +685,21 @@ async function addForm(file) {
   if (!file) return;
   status('양식 분석 중…');
   try {
-    const buf = new Uint8Array(await file.arrayBuffer());
-    let bin = '';
-    for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
-    const data = btoa(bin);
     const name = file.name.replace(/\.xlsx?$/i, '');
+    // 원본 파일을 그대로 보낸다 — base64+JSON으로 감싸면 33% 커져서, 사진이 든
+    // 실제 현장 파일(3~4MB대)이 서버 요청 크기 한도(4.5MB)를 쉽게 넘어버린다.
     const res = await fetch('/api/analyze', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, data }),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream', 'X-Form-Name': encodeURIComponent(name) },
+      body: file,
     });
-    const body = await res.json();
+    const body = await res.json().catch(async () => ({ error: (await res.text().catch(() => '')) || '인식 실패' }));
     if (!res.ok) throw new Error(body.error || '인식 실패');
     // 서버는 정의와 함께 '사진을 걷어낸 빈 양식'을 돌려준다. 지난달 사진이 든 보고서를
     // 그대로 두면 새 사진과 겹쳐 찍히고 파일도 몇 MB씩 무거워지므로 이쪽을 저장한다.
     const def = body.def || body;
-    const keep = body.template || data;
+    if (!body.template) throw new Error('서버가 양식 파일을 돌려주지 않았습니다.');
+    const keep = body.template;
 
     custom[def.id] = { id: def.id, def, data: keep };
     await idb.put({ id: def.id, def, data: keep });
@@ -725,6 +729,11 @@ async function loadForms() {
 
   const mine = (await idb.all()) || [];
   for (const m of mine) { custom[m.id] = m; list = list.concat([m.def]); }
+
+  const hidden = hiddenForms();
+  if (hidden.size) list = list.filter(f => !hidden.has(f.id));
+  if (!list.length) list = (await idb.all() || []).map(m => m.def);   // 전부 숨겼으면 최소한 내가 올린 것만이라도
+  if (!list.length) { setHiddenForms(new Set()); list = JSON.parse(store.get('forms') || '[]'); }  // 그마저 없으면 숨김 초기화
 
   FORMS = list;
   const saved = store.get('form');
