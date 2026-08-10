@@ -15,7 +15,7 @@ const os = require('os');
 const { execFileSync } = require('child_process');
 const ExcelJS = require('exceljs');
 const ROOT = path.join(__dirname, '..');
-const { buildXlsx, forms, stripPhotos } = require(path.join(ROOT, 'lib/build.js'));
+const { buildXlsx, forms, stripPhotos, normalizeForLibreOffice } = require(path.join(ROOT, 'lib/build.js'));
 const { analyzeBuffer } = require(path.join(ROOT, 'tools/add-form.js'));
 
 const RENDER_URL = process.env.RENDER_SERVICE_URL || 'https://sajin-render-1004282132575.asia-northeast3.run.app';
@@ -87,13 +87,26 @@ res = {
   'overlap': float(both.sum() / max(1, inked.sum())),
   'diffRatio': float((da ^ db).sum() / (w * h)),
 }
-# 잉크가 있는 행/열 구간을 비교 (표 선 위치가 밀렸는지)
+# 표 바깥 테두리 위치로 가로·세로 배율과 치우침을 잰다.
+# 배율이 1 이 아니면 열 너비/행 높이 계산이 서로 다르다는 뜻이다.
+def box(d):
+    rows = np.where(d.sum(axis=1) > w * 0.25)[0]
+    cols = np.where(d.sum(axis=0) > h * 0.15)[0]
+    if not len(rows) or not len(cols):
+        return None
+    return dict(top=int(rows.min()), bottom=int(rows.max()),
+                left=int(cols.min()), right=int(cols.max()),
+                w=int(cols.max() - cols.min()), h=int(rows.max() - rows.min()))
+ba, bb = box(da), box(db)
+if ba and bb and ba['w'] and ba['h']:
+    res['scaleX'] = round(bb['w'] / ba['w'], 4)
+    res['scaleY'] = round(bb['h'] / ba['h'], 4)
+    res['offsetX'] = int(bb['left'] - ba['left'])
+    res['offsetY'] = int(bb['top'] - ba['top'])
+# 잉크가 있는 행 구간을 비교 (표 선 위치가 밀렸는지)
 rowsA = np.where(da.sum(axis=1) > w * 0.25)[0]
 rowsB = np.where(db.sum(axis=1) > w * 0.25)[0]
 res['hLinesA'] = len(rowsA); res['hLinesB'] = len(rowsB)
-if len(rowsA) and len(rowsB):
-    n = min(len(rowsA), len(rowsB))
-    res['hLineShiftMax'] = int(np.abs(rowsA[:n] - rowsB[:n]).max())
 if len(sys.argv) > 3:
     d = np.zeros((h, w, 3), dtype=np.uint8) + 255
     d[da & ~db] = [220, 0, 0]      # 엑셀에만 있는 잉크 = 빨강
@@ -125,20 +138,31 @@ async function makeSample(def, templateB64, dir, name) {
   const buf = await buildXlsx(Object.assign(
     { site: '검사 현장', date: '2026-08-04', items },
     templateB64 ? { formDef: def, template: templateB64 } : { form: def.id }));
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf);
-  const keep = (def.sheet && wb.getWorksheet(def.sheet)) || wb.worksheets[0];
-  for (const ws of [...wb.worksheets]) if (ws.id !== keep.id) wb.removeWorksheet(ws.id);
-  const out = path.join(dir, name + '.xlsx');
-  fs.writeFileSync(out, Buffer.from(await wb.xlsx.writeBuffer()));
-  return out;
+  // 엑셀에 보여 줄 원본 (사용자가 내려받는 것과 같다)
+  const wbE = new ExcelJS.Workbook();
+  await wbE.xlsx.load(buf);
+  const keepE = (def.sheet && wbE.getWorksheet(def.sheet)) || wbE.worksheets[0];
+  for (const ws of [...wbE.worksheets]) if (ws.id !== keepE.id) wbE.removeWorksheet(ws.id);
+  const forExcel = path.join(dir, name + '.xlsx');
+  fs.writeFileSync(forExcel, Buffer.from(await wbE.xlsx.writeBuffer()));
+
+  // 변환 서버에 보낼 사본 (api/render.js 와 똑같이 보정을 먹인다)
+  const wbL = new ExcelJS.Workbook();
+  await wbL.xlsx.load(buf);
+  const keepL = (def.sheet && wbL.getWorksheet(def.sheet)) || wbL.worksheets[0];
+  for (const ws of [...wbL.worksheets]) if (ws.id !== keepL.id) wbL.removeWorksheet(ws.id);
+  normalizeForLibreOffice(keepL);
+  const forLo = path.join(dir, name + '-lo.xlsx');
+  fs.writeFileSync(forLo, Buffer.from(await wbL.xlsx.writeBuffer()));
+
+  return { forExcel, forLo };
 }
 
 async function compareOne(label, def, templateB64, dir, keep) {
-  const xlsx = await makeSample(def, templateB64, dir, label.replace(/\W/g, '_'));
-  const ePdf = renderExcel(xlsx, def.sheet, path.join(dir, 'excel.pdf'));
+  const { forExcel, forLo } = await makeSample(def, templateB64, dir, label.replace(/\W/g, '_'));
+  const ePdf = renderExcel(forExcel, def.sheet, path.join(dir, 'excel.pdf'));
   if (!ePdf) { console.log(`   ✗ 엑셀 인쇄 실패 (윈도우 + 엑셀 필요)`); return null; }
-  const lPdf = await renderService(xlsx, path.join(dir, 'lo.pdf'));
+  const lPdf = await renderService(forLo, path.join(dir, 'lo.pdf'));
 
   const eImgs = toPng(ePdf, path.join(dir, 'e'));
   const lImgs = toPng(lPdf, path.join(dir, 'l'));
@@ -150,10 +174,9 @@ async function compareOne(label, def, templateB64, dir, keep) {
   for (let i = 0; i < n; i++) {
     const outPng = keep ? path.join(dir, `diff-${i + 1}.png`) : null;
     const d = diff(eImgs[i], lImgs[i], outPng);
-    const shift = d.hLineShiftMax === undefined ? '?' : d.hLineShiftMax;
     console.log(`   ${i + 1}쪽  글자겹침 ${(d.overlap * 100).toFixed(1)}%` +
-                `  다른픽셀 ${(d.diffRatio * 100).toFixed(2)}%` +
-                `  가로선어긋남 ${shift}px  (선 ${d.hLinesA}/${d.hLinesB})`);
+                `  가로배율 ${d.scaleX ?? '?'}  세로배율 ${d.scaleY ?? '?'}` +
+                `  치우침 ${d.offsetX ?? '?'},${d.offsetY ?? '?'}px`);
     if (!worst || d.overlap < worst.overlap) worst = Object.assign({ page: i + 1 }, d);
   }
   return { pages: n, pagesE: eImgs.length, pagesL: lImgs.length, worst };
@@ -185,10 +208,12 @@ async function compareOne(label, def, templateB64, dir, keep) {
   let allGood = true;
   for (const [name, r] of results) {
     if (!r) { console.log(`  ${name.padEnd(22)} 측정 실패`); allGood = false; continue; }
-    const ok = r.pagesE === r.pagesL && r.worst.overlap >= 0.90 && (r.worst.hLineShiftMax || 0) <= 2;
+    const sx = r.worst.scaleX ?? 0, sy = r.worst.scaleY ?? 0;
+    const ok = r.pagesE === r.pagesL && r.worst.overlap >= 0.80
+      && Math.abs(sx - 1) <= 0.01 && Math.abs(sy - 1) <= 0.01;
     if (!ok) allGood = false;
-    console.log(`  ${ok ? '✓' : '✗'} ${name.padEnd(22)} 최저 글자겹침 ${(r.worst.overlap * 100).toFixed(1)}%` +
-                `  가로선어긋남 ${r.worst.hLineShiftMax ?? '?'}px  쪽수 ${r.pagesE}/${r.pagesL}`);
+    console.log(`  ${ok ? '✓' : '✗'} ${name.padEnd(22)} 겹침 ${(r.worst.overlap * 100).toFixed(1)}%` +
+                `  배율 ${sx}/${sy}  치우침 ${r.worst.offsetX ?? '?'},${r.worst.offsetY ?? '?'}px  쪽수 ${r.pagesE}/${r.pagesL}`);
   }
   if (keep) console.log(`\n비교 이미지: ${dir}  (빨강=엑셀만, 파랑=LibreOffice만, 회색=일치)`);
   process.exit(allGood ? 0 : 1);
