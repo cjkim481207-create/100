@@ -2,3 +2,5 @@ node_modules/
 .vercel/
 package-lock.json
 photos/
+.vercel
+.env*
