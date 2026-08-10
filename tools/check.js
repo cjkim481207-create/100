@@ -199,6 +199,22 @@ async function checkCenter(file, form) {
   return !bad;
 }
 
+/** 결과물에 원본 양식의 여분 페이지·서식이 안 남았는지.
+ *  사람이 만든 원본에는 예비로 만들어 둔 페이지가 실제 현장명까지 박힌 채로 남아 있는
+ *  경우가 흔하다. 사진 수가 적어 그 자리를 안 채우면 그게 그대로 파일에 남아, 인쇄
+ *  미리보기에는 안 보이지만 엑셀을 스크롤하면 이상한 선·남의 현장명으로 나타난다. */
+async function checkNoLeftover(file, form, blocks) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(file);
+  const ws = (form.sheet && wb.getWorksheet(form.sheet)) || wb.worksheets[0];
+  const bs = form.blockStart || 1;
+  const want = bs - 1 + blocks * form.block;
+  const got = ws.rowCount;
+  const bad = got > want;
+  ok(!bad, `여분 없음 (사용 ${want}행, 실제 ${got}행)`);
+  return !bad;
+}
+
 /** xlsx 를 실제 인쇄 모양 그대로 PDF 로 바꾼다.
  *  엑셀이 깔려 있으면 엑셀에게 시킨다 — 우리가 흉내 낸 그림이 아니라 '정답지'가 된다. */
 function toPdf(file, sheet) {
@@ -333,6 +349,7 @@ async function checkUpload(file, wantPrint) {
     }));
     good = checkXlsx(out) && good;
     good = (await checkCenter(out, def)) && good;
+    good = (await checkNoLeftover(out, def, 1)) && good;
     good = checkPrint(out, def) && good;
   }
 
@@ -367,6 +384,7 @@ async function checkUpload(file, wantPrint) {
     fs.writeFileSync(file, await buildXlsx({ form: form.id, site: '검사 현장', date: '2026-08-04', items }));
     good = checkXlsx(file) && good;
     good = (await checkCenter(file, form)) && good;
+    good = (await checkNoLeftover(file, form, Math.ceil(items.length / form.perPage))) && good;
     if (wantPdf) good = checkPrint(file, form) && good;
     allOk = allOk && good;
   }
