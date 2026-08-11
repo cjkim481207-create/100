@@ -3,7 +3,8 @@
   "private": true,
   "description": "현장 사진대지 자동생성 (xlsx + PDF)",
   "scripts": {
-    "test:client": "node tools/test-client.js"
+    "test:client": "node tools/test-client.js",
+    "test:render-setup": "node tools/test-render-setup.js"
   },
   "dependencies": {
     "exceljs": "4.4.0"

@@ -27,7 +27,7 @@ module.exports = async (req, res) => {
     await wb.xlsx.load(xlsxBuf);
     const keep = (form.sheet && wb.getWorksheet(form.sheet)) || wb.worksheets[0];
     for (const ws of wb.worksheets) ws.state = ws.id === keep.id ? 'visible' : 'hidden';
-    normalizeForLibreOffice(keep, form);
+    normalizeForLibreOffice(keep, form, (body.items || []).length);
     const trimmed = Buffer.from(await wb.xlsx.writeBuffer());
 
     const format = body.format === 'png' ? 'png' : 'pdf';
