@@ -303,6 +303,7 @@ function analyzeBook(wb, opt) {
       loColWidthFix: Number(opt.loColWidthFix) > 0 ? Number(opt.loColWidthFix) : 1,
       loRowHeightFix: Number(opt.loRowHeightFix) > 0 ? Number(opt.loRowHeightFix) : 1,
       loFitToPages: !!opt.loFitToPages,
+      loPdfScale: Number(opt.loPdfScale) > 0 ? Number(opt.loPdfScale) : undefined,
       cols, rows,
       margins: { lr: m ? m.left : 0.7086614, tb: m ? m.top : 0.7480315 },
       pageSetup: {
@@ -333,7 +334,7 @@ function main() {
   const args = process.argv.slice(2);
   const file = args[0];
   if (!file) {
-    console.error('사용법: node tools/add-form.js <양식.xlsx> --name "표시 이름" [--id 아이디] [--block 30] [--lo-col 1.0] [--lo-row 1.0] [--lo-fit-pages] [--dry]');
+    console.error('사용법: node tools/add-form.js <양식.xlsx> --name "표시 이름" [--id 아이디] [--block 30] [--lo-col 1.0] [--lo-row 1.0] [--lo-fit-pages] [--lo-scale 85] [--dry]');
     process.exit(1);
   }
   const opt = { dry: args.includes('--dry') };
@@ -342,7 +343,7 @@ function main() {
     const i = args.indexOf('--' + k);
     if (i >= 0) opt[k] = ['block', 'px', 'inset', 'start', 'blockstart'].includes(k) ? +args[i + 1] : args[i + 1];
   }
-  for (const [flag, key] of [['lo-col', 'loColWidthFix'], ['lo-row', 'loRowHeightFix']]) {
+  for (const [flag, key] of [['lo-col', 'loColWidthFix'], ['lo-row', 'loRowHeightFix'], ['lo-scale', 'loPdfScale']]) {
     const i = args.indexOf('--' + flag);
     if (i >= 0) opt[key] = +args[i + 1];
   }
