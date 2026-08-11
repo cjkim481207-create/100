@@ -2,6 +2,7 @@
 
 let FORM = null;                 // 현재 선택된 양식 정의
 let FORMS = [];                  // 사용 가능한 양식 목록
+const BUILTIN_FORM_IDS = new Set(['daeji2', 'jaejae', 'jangbi', 'yongyeok']);
 let FIELDS = [];                 // 이 양식이 요구하는 사진별 입력 항목
 let COLW = [], X = [], Y = [], SHEET_W = 0, SHEET_H = 0;
 const F_TITLE = '"Malgun Gothic","맑은 고딕",sans-serif';
@@ -629,10 +630,14 @@ const formName = f => store.get('name:' + f.id) || f.name;
 
 function renderTabs() {
   const bar = $('tabs');
-  bar.innerHTML = FORMS.map(f => `
-    <button class="tab${f.id === FORM.id ? ' on' : ''}" data-id="${esc(f.id)}">${esc(formName(f))}</button>`).join('')
+  const buttons = forms => forms.map(f => `
+    <button class="tab${f.id === FORM.id ? ' on' : ''}" data-id="${esc(f.id)}">${esc(formName(f))}</button>`).join('');
+  const fixedForms = FORMS.filter(f => BUILTIN_FORM_IDS.has(f.id));
+  const addedForms = FORMS.filter(f => !BUILTIN_FORM_IDS.has(f.id));
+  bar.innerHTML = `<div class="tab-row fixed">${buttons(fixedForms)}</div>`
+    + `<div class="tab-row added">${buttons(addedForms)}`
     + `<button class="tab edit" id="tabEdit" title="탭 이름 바꾸기">✎</button>`
-    + `<button class="tab add" id="tabAdd" title="양식 추가">+ 양식</button>`;
+    + `<button class="tab add" id="tabAdd" title="양식 추가">+ 양식</button></div>`;
   bar.querySelectorAll('.tab[data-id]').forEach(b => b.addEventListener('click', () => selectForm(b.dataset.id)));
   $('tabEdit').addEventListener('click', renameTab);
   $('tabAdd').addEventListener('click', () => $('formFile').click());
@@ -654,7 +659,7 @@ let delArmed = false;
 function renameTab() {
   $('renameInput').value = formName(FORM);
   const del = $('renameDel');
-  del.hidden = FORMS.length <= 1;   // 탭이 하나뿐이면 지울 수 없게 막는다
+  del.hidden = BUILTIN_FORM_IDS.has(FORM.id) || FORMS.length <= 1;
   del.textContent = '양식 삭제';
   delArmed = false;
   $('renameModal').classList.add('show');
@@ -679,14 +684,14 @@ function deleteRenameModal() {
   removeForm(FORM.id);
 }
 
-/** 기본 제공 양식(daeji2 등)은 코드에 있는 정의라 지울 수 없다 —
- *  대신 '이 기기에서 숨김' 목록에 넣어 탭 목록에서만 빼준다. */
+/** 사용자가 추가한 양식만 기기별로 숨길 수 있다. 기본 4개 양식은 항상 고정한다. */
 const hiddenForms = () => { try { return new Set(JSON.parse(store.get('hiddenForms') || '[]')); } catch (e) { return new Set(); } };
 const setHiddenForms = s => store.set('hiddenForms', JSON.stringify([...s]));
 
 async function removeForm(id) {
+  if (BUILTIN_FORM_IDS.has(id)) { status('기본 양식은 삭제할 수 없습니다.'); return; }
   if (custom[id]) { await idb.del(id); delete custom[id]; }
-  else { const h = hiddenForms(); h.add(id); setHiddenForms(h); }
+  else { return; }
   FORMS = FORMS.filter(f => f.id !== id);
   if (!FORMS.length) { location.reload(); return; }   // 안전장치 (평소엔 여기 안 옴)
   useForm(FORMS[0]);
@@ -745,10 +750,17 @@ async function loadForms() {
   if (!list || !list.length) throw new Error('양식 정보를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
 
   const mine = (await idb.all()) || [];
-  for (const m of mine) { custom[m.id] = m; list = list.concat([m.def]); }
+  for (const m of mine) {
+    if (BUILTIN_FORM_IDS.has(m.id)) continue;
+    custom[m.id] = m;
+    if (!list.some(f => f.id === m.id)) list = list.concat([m.def]);
+  }
 
   const hidden = hiddenForms();
-  if (hidden.size) list = list.filter(f => !hidden.has(f.id));
+  let repaired = false;
+  for (const id of BUILTIN_FORM_IDS) repaired = hidden.delete(id) || repaired;
+  if (repaired) setHiddenForms(hidden);
+  if (hidden.size) list = list.filter(f => BUILTIN_FORM_IDS.has(f.id) || !hidden.has(f.id));
   if (!list.length) list = (await idb.all() || []).map(m => m.def);   // 전부 숨겼으면 최소한 내가 올린 것만이라도
   if (!list.length) { setHiddenForms(new Set()); list = JSON.parse(store.get('forms') || '[]'); }  // 그마저 없으면 숨김 초기화
 

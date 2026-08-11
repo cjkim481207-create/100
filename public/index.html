@@ -37,8 +37,10 @@
                 border:1px solid #b8863a;border-radius:7px;background:#b8863a;color:#fff;cursor:pointer}
   #inapp button#copyUrl{background:transparent;color:#7a5a1c}
 
-  #tabs{display:none;gap:6px;overflow-x:auto;padding:0 12px 10px;max-width:760px;margin:0 auto;
-        -webkit-overflow-scrolling:touch}
+  #tabs{display:none;flex-direction:column;gap:7px;padding:0 12px 10px;max-width:760px;margin:0 auto}
+  #tabs .tab-row{display:flex;gap:6px}
+  #tabs .tab-row.fixed{flex-wrap:wrap}
+  #tabs .tab-row.added{overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}
   #tabs .tab{flex:none;padding:9px 14px;font:inherit;font-size:13.5px;white-space:nowrap;cursor:pointer;
              border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--dim)}
   #tabs .tab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
