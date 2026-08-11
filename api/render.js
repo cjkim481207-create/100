@@ -16,13 +16,16 @@ module.exports = async (req, res) => {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const xlsxBuf = await buildXlsx(body);
 
-    // 관련 시트 하나만 남긴다. 원본 통합문서에 다른 시트가 섞여 있으면(예: 7시트짜리 보고서)
-    // 그 시트들까지 그대로 인쇄돼 버린다.
+    // 사진대지 시트만 인쇄되게 한다. 원본에 다른 시트가 섞여 있으면(예: 7시트짜리 증빙 파일)
+    // 그 시트들까지 인쇄돼 버린다. 지우지 않고 '숨김'으로 돌리는 게 중요하다 —
+    // ExcelJS 로 시트를 지우면 통합문서가 깨져서 엑셀이 파일을 아예 열지 못하고,
+    // LibreOffice 는 그 깨진 파일을 너그럽게 열어 엉뚱하게 그린다. 숨긴 시트는
+    // 엑셀도 LibreOffice 도 인쇄하지 않으므로 목적은 그대로 달성된다.
     const form = body.formDef || forms().find(f => f.id === body.form) || forms()[0];
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(xlsxBuf);
     const keep = (form.sheet && wb.getWorksheet(form.sheet)) || wb.worksheets[0];
-    for (const ws of [...wb.worksheets]) if (ws.id !== keep.id) wb.removeWorksheet(ws.id);
+    for (const ws of wb.worksheets) ws.state = ws.id === keep.id ? 'visible' : 'hidden';
     normalizeForLibreOffice(keep);
     const trimmed = Buffer.from(await wb.xlsx.writeBuffer());
 
