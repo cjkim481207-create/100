@@ -11,8 +11,8 @@
     "blocksPerPage": 1,
     "firstPageBlocks": 1,
     "pxPerChar": 8,
-    "loColWidthFix": 1.184,
-    "loRowHeightFix": 1.031,
+    "loColWidthFix": 1.195,
+    "loRowHeightFix": 1.034,
     "pageSetup": {
       "paperSize": 9,
       "orientation": "portrait",
