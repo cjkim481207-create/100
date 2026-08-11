@@ -530,6 +530,23 @@ async function share(kind) {
   } catch (e) { busy(false); status('⚠️ 공유 실패: ' + e.message); }
 }
 
+/** Canvas를 JPEG 바이트로 변환한다. toBlob 실패도 사용자에게 명확히 알린다. */
+function canvasJpeg(cv, quality) {
+  return new Promise((resolve, reject) => {
+    cv.toBlob(async blob => {
+      if (!blob) {
+        reject(new Error('사진을 JPEG로 변환하지 못했습니다.'));
+        return;
+      }
+      try {
+        resolve(new Uint8Array(await blob.arrayBuffer()));
+      } catch (error) {
+        reject(error);
+      }
+    }, 'image/jpeg', quality);
+  });
+}
+
 async function shrink(it, max, q) {
   if (it.small && it.small.max === max && it.small.q === q) return it.small.payload;
   const r = Math.min(1, max / Math.max(it.w, it.h));

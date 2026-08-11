@@ -2,6 +2,9 @@
   "name": "photo-daeji",
   "private": true,
   "description": "현장 사진대지 자동생성 (xlsx + PDF)",
+  "scripts": {
+    "test:client": "node tools/test-client.js"
+  },
   "dependencies": {
     "exceljs": "4.4.0"
   }
