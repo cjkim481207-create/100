@@ -17,7 +17,6 @@ Vercel 에 이 저장소를 그대로 배포하면 열립니다 (`public/` 폴�
 | `api/xlsx.js` | 양식 xlsx에 사진을 넣어 내려주는 서버 함수 |
 | `lib/build.js` | 엑셀 생성 로직 (ExcelJS) |
 | `templates/template.xlsx` | 사진대지 양식 원본 — 양식이 바뀌면 이 파일만 교체 |
-| `make_daeji.py` | PC에서 폴더 단위 일괄 생성 (`pip install openpyxl pillow`) |
 
 ### Vercel 배포
 
