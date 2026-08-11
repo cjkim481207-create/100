@@ -11,7 +11,7 @@
     "blocksPerPage": 1,
     "firstPageBlocks": 1,
     "pxPerChar": 8,
-    "loColWidthFix": 1.295,
+    "loColWidthFix": 1.232,
     "loRowHeightFix": 1.031,
     "pageSetup": {
       "paperSize": 9,
