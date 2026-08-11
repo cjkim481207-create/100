@@ -59,6 +59,20 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ ok: true }));
     return;
   }
+  // 어떤 글꼴로 대체되는지 확인용 — 글꼴이 어긋나면 엑셀의 열 너비 계산이 통째로 틀어진다
+  if (req.method === 'GET' && req.url.startsWith('/fonts')) {
+    const want = ['Calibri', 'Arial', 'Malgun Gothic', '맑은 고딕', 'Gulim', '굴림',
+                  'GulimChe', '굴림체', '새굴림', 'Carlito', 'Liberation Sans', 'Noto Sans KR', 'NanumGothic'];
+    const out = {};
+    for (const f of want) {
+      try { out[f] = (await run('fc-match', [f])).toString().trim(); }
+      catch (e) { out[f] = 'ERR ' + e.message; }
+    }
+    try { out._locale = (await run('sh', ['-c', 'echo $LANG; locale 2>&1 | head -3'])).toString().trim(); } catch (e) { /* 무시 */ }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(out, null, 1));
+    return;
+  }
   if (req.method !== 'POST' || req.url !== '/convert') {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));

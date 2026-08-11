@@ -1,5 +1,5 @@
 const ExcelJS = require('exceljs');
-const { buildXlsx, forms } = require('../lib/build.js');
+const { buildXlsx, forms, normalizeForLibreOffice } = require('../lib/build.js');
 
 module.exports.config = { api: { bodyParser: { sizeLimit: '12mb' } } };
 
@@ -23,6 +23,7 @@ module.exports = async (req, res) => {
     await wb.xlsx.load(xlsxBuf);
     const keep = (form.sheet && wb.getWorksheet(form.sheet)) || wb.worksheets[0];
     for (const ws of [...wb.worksheets]) if (ws.id !== keep.id) wb.removeWorksheet(ws.id);
+    normalizeForLibreOffice(keep);
     const trimmed = Buffer.from(await wb.xlsx.writeBuffer());
 
     const format = body.format === 'png' ? 'png' : 'pdf';
