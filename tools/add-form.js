@@ -300,8 +300,22 @@ function analyzeBook(wb, opt) {
       perPage: slots.length,
       blocksPerPage, firstPageBlocks,
       pxPerChar,
+      loColWidthFix: Number(opt.loColWidthFix) > 0 ? Number(opt.loColWidthFix) : 1,
+      loRowHeightFix: Number(opt.loRowHeightFix) > 0 ? Number(opt.loRowHeightFix) : 1,
       cols, rows,
       margins: { lr: m ? m.left : 0.7086614, tb: m ? m.top : 0.7480315 },
+      pageSetup: {
+        paperSize: ws.pageSetup && ws.pageSetup.paperSize,
+        orientation: (ws.pageSetup && ws.pageSetup.orientation) || 'portrait',
+        fitToPage: ws.pageSetup && ws.pageSetup.fitToPage,
+        fitToWidth: ws.pageSetup && ws.pageSetup.fitToWidth,
+        fitToHeight: ws.pageSetup && ws.pageSetup.fitToHeight,
+        scale: ws.pageSetup && ws.pageSetup.scale,
+        horizontalCentered: ws.pageSetup && ws.pageSetup.horizontalCentered,
+        verticalCentered: ws.pageSetup && ws.pageSetup.verticalCentered,
+        margins: m ? Object.assign({}, m) : null,
+        printArea: ws.pageSetup && ws.pageSetup.printArea,
+      },
       title: titleInBlock ? { row: title.r1, cols: [title.c1, title.c2], text: titleText,
                size: ws.getCell(title.r1, title.c1).font?.size || 20,
                bold: !!(ws.getCell(title.r1, title.c1).font || {}).bold } : null,
@@ -318,13 +332,17 @@ function main() {
   const args = process.argv.slice(2);
   const file = args[0];
   if (!file) {
-    console.error('사용법: node tools/add-form.js <양식.xlsx> --name "표시 이름" [--id 아이디] [--block 30] [--dry]');
+    console.error('사용법: node tools/add-form.js <양식.xlsx> --name "표시 이름" [--id 아이디] [--block 30] [--lo-col 1.0] [--lo-row 1.0] [--dry]');
     process.exit(1);
   }
   const opt = { dry: args.includes('--dry') };
   for (const k of ['name', 'id', 'block', 'px', 'inset', 'sheet', 'start', 'blockstart']) {
     const i = args.indexOf('--' + k);
     if (i >= 0) opt[k] = ['block', 'px', 'inset', 'start', 'blockstart'].includes(k) ? +args[i + 1] : args[i + 1];
+  }
+  for (const [flag, key] of [['lo-col', 'loColWidthFix'], ['lo-row', 'loRowHeightFix']]) {
+    const i = args.indexOf('--' + flag);
+    if (i >= 0) opt[key] = +args[i + 1];
   }
   opt.id = opt.id || path.basename(file, '.xlsx').replace(/[^a-zA-Z0-9_-]/g, '') || 'form';
   opt.name = opt.name || path.basename(file, '.xlsx');

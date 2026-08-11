@@ -172,12 +172,52 @@ function pageCount() {
 function renderPreview() {
   const pages = pageCount();
   $('pvLabel').style.display = pages ? 'block' : 'none';
+  $('pvLabel').textContent = '빠른 미리보기 · 정밀 미리보기 준비 중';
   const box = $('preview');
   box.innerHTML = '';
   for (let p = 0; p < pages; p++) {
     const c = document.createElement('canvas');
     box.appendChild(c);
     drawPage(c, p, 96);
+  }
+  scheduleExactPreview();
+}
+
+let exactPreviewTimer = null;
+let exactPreviewVersion = 0;
+function scheduleExactPreview() {
+  clearTimeout(exactPreviewTimer);
+  const version = ++exactPreviewVersion;
+  if (!items.length) return;
+  exactPreviewTimer = setTimeout(() => renderExactPreview(version), 900);
+}
+
+async function renderExactPreview(version) {
+  if (!(await checkRenderService())) {
+    if (version === exactPreviewVersion) $('pvLabel').textContent = '빠른 미리보기 · 정밀 변환 서버 연결 필요';
+    return;
+  }
+  try {
+    const body = Object.assign({ format: 'png', dpi: 110 }, await pdfBody());
+    const res = await fetch('/api/render', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: requestJson(body),
+    });
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.status);
+    const out = await res.json();
+    if (version !== exactPreviewVersion) return;
+    if (!out.pages || !out.pages.length) throw new Error('미리보기 페이지가 없습니다.');
+    const box = $('preview');
+    box.innerHTML = '';
+    for (const data of out.pages) {
+      const img = new Image();
+      img.alt = '정밀 PDF 미리보기';
+      img.style.cssText = 'display:block;width:100%;margin-bottom:10px;border:1px solid var(--line);border-radius:4px;background:#fff';
+      img.src = 'data:image/png;base64,' + data;
+      box.appendChild(img);
+    }
+    $('pvLabel').textContent = '정밀 미리보기 (PDF와 같은 변환 결과)';
+  } catch (e) {
+    if (version === exactPreviewVersion) $('pvLabel').textContent = '빠른 미리보기 · 정밀 미리보기 실패: ' + e.message;
   }
 }
 
@@ -342,8 +382,8 @@ function fmtDate(iso) {
 }
 
 // ── PDF 만들기 ──────────────────────────────────────────────────────────
-// 변환 서버(LibreOffice)가 켜져 있으면 그걸 써서 진짜 엑셀 인쇄 결과를 받는다.
-// 없거나 실패하면 화면에서 흉내 낸 그림으로 대신 만든다 (원본과 미세하게 다를 수 있음).
+// PDF는 반드시 실제 스프레드시트 변환 서버의 인쇄 결과를 사용한다.
+// 화면 캔버스는 빠른 미리보기일 뿐이며, 정밀 변환 실패를 다른 PDF로 숨기지 않는다.
 let renderOk = null;   // null=아직 모름, true/false=확인됨 (세션 동안 한 번만 물어본다)
 async function checkRenderService() {
   if (renderOk !== null) return renderOk;
@@ -355,83 +395,19 @@ async function checkRenderService() {
 }
 
 async function buildPdf() {
-  if (await checkRenderService()) {
-    try { return await buildPdfReal(); }
-    catch (e) { /* 서버가 잠깐 응답 없으면 화면 그림으로 대신 만든다 */ }
+  if (!(await checkRenderService())) {
+    throw new Error('정밀 PDF 변환 서버가 연결되지 않았습니다. 잠시 후 다시 시도하거나 관리자에게 알려 주세요.');
   }
-  return buildPdfLocal();
+  return buildPdfReal();
 }
 
 async function buildPdfReal() {
   const res = await fetch('/api/render', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(Object.assign({ format: 'pdf' }, await pdfBody())),
+    body: requestJson(Object.assign({ format: 'pdf' }, await pdfBody())),
   });
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.status);
   return res.blob();
-}
-
-async function buildPdfLocal() {
-  const pages = pageCount(), jpegs = [];
-  const cv = document.createElement('canvas');
-  for (let p = 0; p < pages; p++) {
-    drawPage(cv, p, 200);              // 글씨가 또렷하게 나오도록 200dpi
-    jpegs.push(await canvasJpeg(cv, 0.92));
-  }
-  return new Blob([pdfBytes(jpegs, 595.28, 841.89)], { type: 'application/pdf' });
-}
-
-function canvasJpeg(cv, q) {
-  return new Promise(res => cv.toBlob(b => b.arrayBuffer().then(a => res(new Uint8Array(a))), 'image/jpeg', q));
-}
-
-/** JPEG 페이지들을 최소 구조의 PDF로 묶는다 (외부 라이브러리 없음) */
-function pdfBytes(jpegs, wPt, hPt) {
-  const enc = new TextEncoder(), chunks = [], offsets = [];
-  let len = 0;
-  const put = d => { const u = typeof d === 'string' ? enc.encode(d) : d; chunks.push(u); len += u.length; };
-  const obj = (n, body, stream) => {
-    offsets[n] = len;
-    put(`${n} 0 obj\n${body}\n`);
-    if (stream) { put('stream\n'); put(stream); put('\nendstream\n'); }
-    put('endobj\n');
-  };
-
-  put('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
-  const kids = jpegs.map((_, i) => `${3 + i * 3} 0 R`).join(' ');
-  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
-  obj(2, `<< /Type /Pages /Count ${jpegs.length} /Kids [${kids}] >>`);
-  jpegs.forEach((jpg, i) => {
-    const pg = 3 + i * 3, ct = pg + 1, im = pg + 2;
-    obj(pg, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${wPt} ${hPt}] ` +
-            `/Resources << /XObject << /Im0 ${im} 0 R >> >> /Contents ${ct} 0 R >>`);
-    const content = `q ${wPt} 0 0 ${hPt} 0 0 cm /Im0 Do Q`;
-    obj(ct, `<< /Length ${content.length} >>`, content);
-    obj(im, `<< /Type /XObject /Subtype /Image /Width ${jpgSize(jpg)[0]} /Height ${jpgSize(jpg)[1]} ` +
-            `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>`, jpg);
-  });
-
-  const xref = len, n = 3 + jpegs.length * 3;
-  let t = `xref\n0 ${n}\n0000000000 65535 f \n`;
-  for (let i = 1; i < n; i++) t += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
-  put(t + `trailer\n<< /Size ${n} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
-
-  const out = new Uint8Array(len);
-  let at = 0;
-  for (const c of chunks) { out.set(c, at); at += c.length; }
-  return out;
-}
-
-function jpgSize(b) {
-  for (let i = 2; i < b.length;) {
-    if (b[i] !== 0xFF) { i++; continue; }
-    const mk = b[i + 1];
-    if (mk >= 0xC0 && mk <= 0xCF && mk !== 0xC4 && mk !== 0xC8 && mk !== 0xCC) {
-      return [(b[i + 7] << 8) | b[i + 8], (b[i + 5] << 8) | b[i + 6]];
-    }
-    i += 2 + ((b[i + 2] << 8) | b[i + 3]);
-  }
-  return [0, 0];
 }
 
 // ── XLSX 만들기 (서버가 양식 파일에 사진을 삽입) ───────────────────────────
@@ -451,11 +427,21 @@ async function pdfBody() {
   return body;
 }
 
+const MAX_REQUEST_BYTES = 4_000_000;
+function requestJson(body) {
+  const json = JSON.stringify(body);
+  const bytes = new TextEncoder().encode(json).byteLength;
+  if (bytes > MAX_REQUEST_BYTES) {
+    throw new Error(`사진과 양식을 합친 요청이 너무 큽니다 (${(bytes / 1e6).toFixed(1)}MB). 사진 수를 나눠서 만들어 주세요.`);
+  }
+  return json;
+}
+
 async function buildXlsx() {
   const res = await fetch('/api/xlsx', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(await pdfBody()),
+    body: requestJson(await pdfBody()),
   });
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || res.status);
   return res.blob();

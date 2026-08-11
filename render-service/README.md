@@ -20,8 +20,9 @@
      --allow-unauthenticated \
      --memory 1Gi \
      --cpu 1 \
+     --concurrency 2 \
      --max-instances 3 \
-     --set-env-vars API_KEY=<아무 긴 문자열이나 직접 정해서>
+     --set-env-vars API_KEY=<충분히 긴 임의 문자열>,COMMAND_TIMEOUT_MS=120000,MAX_CONCURRENT_CONVERSIONS=2
    ```
 4. 배포가 끝나면 URL이 나옵니다 (`https://sajin-render-xxxx.a.run.app` 같은 형태).
 
@@ -35,7 +36,9 @@ Vercel 프로젝트 설정 → Environment Variables 에 추가:
 | `RENDER_SERVICE_KEY` | 배포할 때 정한 `API_KEY`와 같은 값 |
 
 추가한 뒤 다시 배포하면 앱의 PDF 저장·공유가 자동으로 이 서버를 씁니다.
-서버가 설정 안 돼 있거나 응답이 없으면 예전처럼 화면에서 그려서 대신 만듭니다 (앱이 멈추지 않습니다).
+서버가 설정되지 않았거나 변환에 실패하면 앱은 정밀 PDF를 만들 수 없다는 오류를 표시합니다.
+원본과 다른 캔버스 PDF로 조용히 대체하지 않습니다. `API_KEY`가 비어 있으면 변환 서버도
+보안을 위해 시작을 거부합니다.
 
 ## 확인
 

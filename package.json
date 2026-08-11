@@ -3,6 +3,6 @@
   "private": true,
   "description": "현장 사진대지 자동생성 (xlsx + PDF)",
   "dependencies": {
-    "exceljs": "^4.4.0"
+    "exceljs": "4.4.0"
   }
 }
