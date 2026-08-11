@@ -138,19 +138,16 @@ async function makeSample(def, templateB64, dir, name) {
   const buf = await buildXlsx(Object.assign(
     { site: '검사 현장', date: '2026-08-04', items },
     templateB64 ? { formDef: def, template: templateB64 } : { form: def.id }));
-  // 엑셀에 보여 줄 원본 (사용자가 내려받는 것과 같다)
-  const wbE = new ExcelJS.Workbook();
-  await wbE.xlsx.load(buf);
-  const keepE = (def.sheet && wbE.getWorksheet(def.sheet)) || wbE.worksheets[0];
-  for (const ws of [...wbE.worksheets]) if (ws.id !== keepE.id) wbE.removeWorksheet(ws.id);
+  // 엑셀에 보여 줄 파일 = 사용자가 내려받는 것 그대로 (손대지 않는다).
+  // 엑셀 쪽은 해당 시트만 내보내므로 다른 시트를 지울 필요가 없다.
   const forExcel = path.join(dir, name + '.xlsx');
-  fs.writeFileSync(forExcel, Buffer.from(await wbE.xlsx.writeBuffer()));
+  fs.writeFileSync(forExcel, buf);
 
-  // 변환 서버에 보낼 사본 (api/render.js 와 똑같이 보정을 먹인다)
+  // 변환 서버에 보낼 사본 (api/render.js 와 똑같이: 다른 시트는 숨기고 보정을 먹인다)
   const wbL = new ExcelJS.Workbook();
   await wbL.xlsx.load(buf);
   const keepL = (def.sheet && wbL.getWorksheet(def.sheet)) || wbL.worksheets[0];
-  for (const ws of [...wbL.worksheets]) if (ws.id !== keepL.id) wbL.removeWorksheet(ws.id);
+  for (const ws of wbL.worksheets) ws.state = ws.id === keepL.id ? 'visible' : 'hidden';
   normalizeForLibreOffice(keepL);
   const forLo = path.join(dir, name + '-lo.xlsx');
   fs.writeFileSync(forLo, Buffer.from(await wbL.xlsx.writeBuffer()));
