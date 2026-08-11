@@ -1,0 +1,4 @@
+interface:
+  display_name: "Photo Daeji Release Guard"
+  short_description: "Prevent XLSX, PDF, tab, and deployment regressions"
+  default_prompt: "Use $photo-daeji-release-guard to change and release the photo-daeji app without regressions."
