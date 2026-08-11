@@ -97,9 +97,21 @@ async function loadPhoto(f) {
   if (r === 1) return { bmp: src, w, h };
   const cv = document.createElement('canvas');
   cv.width = Math.round(w * r); cv.height = Math.round(h * r);
-  cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
+  const g = cv.getContext('2d');
+  fillWhite(g, cv);
+  g.drawImage(src, 0, 0, cv.width, cv.height);
   if (src.close) src.close();
   return { bmp: cv, w: cv.width, h: cv.height };
+}
+
+/** 캔버스는 처음에 '투명한 검정'이다. 투명한 곳이 있는 그림(도면·스크린샷 PNG 등)을
+ *  그대로 JPEG 로 저장하면 JPEG 에는 투명이 없으므로 그 부분이 전부 검정이 된다
+ *  (사진이 검게 나온다는 신고). 그리기 전에 흰색을 깔아 둔다. */
+function fillWhite(g, cv) {
+  g.save();
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, cv.width, cv.height);
+  g.restore();
 }
 
 async function addFiles(files) {
@@ -538,7 +550,9 @@ async function shrink(it, max, q) {
   const w = Math.round(it.w * r), h = Math.round(it.h * r);
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
-  cv.getContext('2d').drawImage(it.bmp, 0, 0, w, h);
+  const g = cv.getContext('2d');
+  fillWhite(g, cv);                 // 투명한 부분이 JPEG 에서 검정이 되는 것을 막는다
+  g.drawImage(it.bmp, 0, 0, w, h);
   const jpg = await canvasJpeg(cv, q);
   let bin = '';
   for (const b of jpg) bin += String.fromCharCode(b);
