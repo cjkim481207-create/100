@@ -3,6 +3,7 @@
 let FORM = null;                 // 현재 선택된 양식 정의
 let FORMS = [];                  // 사용 가능한 양식 목록
 const BUILTIN_FORM_IDS = new Set(['daeji2', 'jaejae', 'jangbi', 'yongyeok']);
+const BUILTIN_SITE = '구리갈매 A-2BL 아파트 건설공사 3공구';
 let FIELDS = [];                 // 이 양식이 요구하는 사진별 입력 항목
 let COLW = [], X = [], Y = [], SHEET_W = 0, SHEET_H = 0;
 const F_TITLE = '"Malgun Gothic","맑은 고딕",sans-serif';
@@ -34,6 +35,16 @@ function useForm(form) {
   X = [0, 0]; COLW.forEach(w => X.push(X[X.length - 1] + w));        // X[n] = n번째 열 시작
   Y = [0]; form.rows.forEach(h => Y.push(Y[Y.length - 1] + h * 4 / 3));  // Y[r] = r행 끝
   SHEET_W = X[X.length - 1]; SHEET_H = Y[Y.length - 1];
+  syncSiteInput(form);
+}
+
+function syncSiteInput(form) {
+  const input = $('f_site');
+  if (!input) return;
+  const fixed = BUILTIN_FORM_IDS.has(form.id);
+  input.value = fixed ? BUILTIN_SITE : (store.get('site') || '');
+  input.readOnly = fixed;
+  input.title = fixed ? '기본 4개 양식의 현장명은 고정되어 있습니다.' : '';
 }
 const blockStart = () => FORM.blockStart || 1;
 const blockTop = () => Y[blockStart() - 1];        // 머리글 높이
@@ -786,9 +797,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   catch (e) { status('⚠️ ' + e.message); return; }
   const kst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   $('f_date').value = kst;
-  $('f_site').value = store.get('site') || '';
+  syncSiteInput(FORM);
   ['f_site', 'f_date'].forEach(id => $(id).addEventListener('input', () => {
-    if (id === 'f_site') store.set('site', $(id).value);
+    if (id === 'f_site' && !BUILTIN_FORM_IDS.has(FORM.id)) store.set('site', $(id).value);
     invalidate();
     schedule();
   }));
