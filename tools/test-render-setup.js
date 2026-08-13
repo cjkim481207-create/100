@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
-const { buildXlsx, forms, normalizeForLibreOffice } = require('../lib/build.js');
+const { buildXlsx, forms, resolveForm, normalizeForLibreOffice } = require('../lib/build.js');
 
 const jpeg = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/EH//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/EH//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/EH//2Q==';
 const BUILTIN_SITE_TEXT = '현장명 : 구리갈매 A-2BL 아파트 건설공사 3공구';
@@ -48,7 +48,16 @@ async function checkFitForm(formId, itemCount) {
 async function checkBuiltInSite(formId) {
   const form = forms().find(item => item.id === formId);
   const item = { w: 1, h: 1, data: jpeg, fields: {} };
-  const xlsx = await buildXlsx({ form: formId, site: '바뀌면 안 되는 현장명', items: [item] });
+  const stale = { ...form, loColWidthFix: 9, loRowHeightFix: 9, pageSetup: {} };
+  assert.equal(resolveForm({ form: formId, formDef: stale }).form.loColWidthFix, form.loColWidthFix,
+    `${formId}: stale built-in form definition must be ignored`);
+  const xlsx = await buildXlsx({
+    form: formId,
+    formDef: stale,
+    template: Buffer.from('stale built-in template').toString('base64'),
+    site: '바뀌면 안 되는 현장명',
+    items: [item],
+  });
   const workbook = await workbookFrom(xlsx);
   const sheet = workbook.getWorksheet(form.sheet);
   assert.equal(sheet.getCell(form.site.row, form.site.col).value, BUILTIN_SITE_TEXT, `${formId}: site must be fixed`);

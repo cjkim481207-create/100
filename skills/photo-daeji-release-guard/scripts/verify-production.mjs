@@ -76,6 +76,10 @@ const cases = [
 for (const [form, count, expectedPages] of cases) {
   const item = { width, height, w: width, h: height, data, fields: { date: '2026-08-11', memo: `release guard ${count}` } };
   const body = { form, site: 'production release guard', date: '2026-08-11', items: Array.from({ length: count }, () => item) };
+  if (form === 'daeji2') {
+    body.formDef = { ...forms.find(entry => entry.id === form), loColWidthFix: 9, loRowHeightFix: 9, pageSetup: {} };
+    body.template = Buffer.from('stale built-in browser template').toString('base64');
+  }
   const stem = `${form}-${count}`;
 
   const xlsx = (await post('/api/xlsx', body)).bytes;

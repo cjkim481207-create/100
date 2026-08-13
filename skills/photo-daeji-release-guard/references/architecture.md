@@ -59,6 +59,7 @@ Use per-form settings in `forms.json`:
 | Tabs differ by device | Local `hiddenForms` or scrolled custom tabs remove built-ins from view | Keep built-ins immutable and in a separate wrapping row; run `test:fixed-tabs`. |
 | PDF looks valid after renderer failure | Client silently creates a different canvas PDF | Surface the renderer error; never use an unlabelled fallback. |
 | New form changes every existing PDF | Global LibreOffice calibration or page overrides | Store and apply calibration per form only. |
+| A built-in PDF regresses on one device | A stale open tab or IndexedDB sends an old `formDef`/`template` that overrides the deployed built-in | Resolve built-in IDs from server files and ignore client definitions/templates for those IDs. |
 
 ## Deployment surfaces
 

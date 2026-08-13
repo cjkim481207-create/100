@@ -35,6 +35,7 @@ Require all of the following:
 - `/api/forms` returns `daeji2, jaejae, jangbi, yongyeok` first and in order.
 - `/api/render` returns `ok: true`.
 - Deployed `app.js` contains `canvasJpeg` and the fixed built-in ID set.
+- A stale client-supplied `daeji2` definition and template are ignored by the server.
 - Every XLSX response has ZIP magic `PK`.
 - Every PDF response has `%PDF-` magic.
 - `daeji2` with 1 photo: 1 PNG page.
