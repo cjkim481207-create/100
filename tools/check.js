@@ -248,7 +248,17 @@ function checkPrint(file, form) {
   const cells = form.slots.flatMap(s => s.rows.filter(l => l.row === row).flatMap(l => l.cells))
     .sort((a, b) => a.cols[0] - b.cols[0]);
   const want = cells.map(c => form.cols.slice(c.cols[0] - 1, c.cols[1]).reduce((a, b) => a + b, 0));
-  const out = execFileSync(needPy('인쇄 결과 검사'), [path.join(__dirname, 'rules.py'), pdf, String(cells.length)], { encoding: 'utf8' }).trim();
+  // The 용역 summary header and dark photo details can also have four apparent
+  // columns. Locate the photo caption row instead of accepting the first match.
+  const bs = form.blockStart || 1, bpp = form.blocksPerPage || 1, fpb = form.firstPageBlocks || bpp;
+  const headerH = form.rows.slice(0, bs - 1).reduce((a, b) => a + b, 0);
+  const blockH = form.rows.slice(bs - 1).reduce((a, b) => a + b, 0);
+  const margins = form.margins || { lr: 0.7, tb: 0.75 };
+  const width = form.cols.reduce((t, w) => t + Math.round(w * (form.pxPerChar || 8) + 5), 0) * 0.75;
+  const height = Math.max(headerH + fpb * blockH, (form.repeatHeader ? headerH : 0) + bpp * blockH);
+  const k = Math.min(1, (8.2677 - margins.lr * 2) * 72 / width, (11.6929 - margins.tb * 2) * 72 / height);
+  const captionY = margins.tb * 72 + (form.rows.slice(0, row - 1).reduce((a, b) => a + b, 0) + form.rows[row - 1] / 2) * k;
+  const out = execFileSync(needPy('인쇄 결과 검사'), [path.join(__dirname, 'rules.py'), pdf, String(cells.length), String(captionY)], { encoding: 'utf8' }).trim();
   if (!out) { ok(false, '인쇄 결과에서 표를 찾지 못함'); return false; }
   const got = out.split(' ').map(Number);
   const norm = a => a.map(v => v / a.reduce((x, y) => x + y, 0));

@@ -242,12 +242,13 @@ function drawPage(cv, page, dpi) {
   const bpp = FORM.blocksPerPage || 1, fpb = FORM.firstPageBlocks || bpp;
   const BH = Y[Y.length - 1] - blockTop();               // 블록 한 개 높이
   const first = page === 0 ? 0 : fpb + (page - 1) * bpp;  // 이 장의 첫 블록 번호
-  const nBlk = page === 0 ? fpb : bpp;
+  const nBlk = Math.min(page === 0 ? fpb : bpp, Math.ceil(items.length / FORM.perPage) - first);
   let shift = 0;                                          // 블록을 아래로 쌓는 양
 
   const u = v => v * 0.75 * k * S;           // 양식 픽셀(96dpi) → 캔버스 px
   const px = v => (ox * S) + u(v);
-  const py = v => (oy * S) + u(v - (page === 0 ? 0 : blockTop()) + shift);
+  const showHeader = page === 0 || FORM.repeatHeader;
+  const py = v => (oy * S) + u(v - (showHeader ? 0 : blockTop()) + shift);
   const fs = v => v * k * S;               // 글자 pt → 캔버스 px
   const last = X.length - 1;
 
@@ -256,8 +257,8 @@ function drawPage(cv, page, dpi) {
   g.textBaseline = 'middle';
 
   const styled = FORM.templateCells && FORM.templateCells.length;
-  if (page === 0 && styled) drawTemplateCells(g, FORM.templateCells.filter(c => c.r < blockStart()), px, py, fs);
-  if (page === 0 && FORM.header && !styled) {
+  if (showHeader && styled) drawTemplateCells(g, FORM.templateCells.filter(c => c.r < blockStart()), px, py, fs);
+  if (showHeader && FORM.header && !styled) {
     for (const c of FORM.header.cells) {
       g.font = `${c.bold ? 'bold ' : ''}${fs(c.size || 11)}px ${F_TITLE}`;
       const mid = (Y[c.row - 1] + Y[c.row]) / 2;
@@ -273,7 +274,7 @@ function drawPage(cv, page, dpi) {
   const st0 = FORM.site;
 
   const st = FORM.site;
-  if (st && (page === 0 || st.row >= blockStart())) {
+  if (st && (showHeader || st.row >= blockStart())) {
     g.font = `${fs(st.size || 11)}px ${F_TITLE}`;
     g.textAlign = 'left';
     g.fillText((st.prefix || '') + $('f_site').value, px(X[st.col]), py((Y[st.row - 1] + Y[st.row]) / 2));
@@ -329,7 +330,7 @@ function drawBlock(g, block, dateText, px, py, u, fs) {
           g.font = `${size}px ${F_TABLE}`;
         }
         g.textAlign = 'center';
-        g.fillText(text, (x0 + x1) / 2, (y0 + y1) / 2);
+        g.fillText(text, (x0 + x1) / 2, (y0 + y1) / 2, Math.max(1, max));
       }
     }
   });
@@ -641,6 +642,10 @@ function selectForm(id) {
   if (id === FORM.id) return;
   store.set('form', id);
   useForm(FORMS.find(f => f.id === id));
+  for (const it of items) for (const fd of FIELDS) {
+    if (it.v[fd.key] === undefined) it.v[fd.key] = fd.key === 'date'
+      ? $('f_date').value : (store.get('d:' + FORM.id + ':' + fd.key) || '');
+  }
   invalidate();
   renderTabs();
   render();
@@ -651,7 +656,7 @@ let delArmed = false;
 function renameTab() {
   $('renameInput').value = formName(FORM);
   const del = $('renameDel');
-  del.hidden = FORMS.length <= 1;   // 탭이 하나뿐이면 지울 수 없게 막는다
+  del.hidden = !custom[FORM.id];
   del.textContent = '양식 삭제';
   delArmed = false;
   $('renameModal').classList.add('show');
@@ -682,6 +687,7 @@ const hiddenForms = () => { try { return new Set(JSON.parse(store.get('hiddenFor
 const setHiddenForms = s => store.set('hiddenForms', JSON.stringify([...s]));
 
 async function removeForm(id) {
+  if (!custom[id]) return;
   if (custom[id]) { await idb.del(id); delete custom[id]; }
   else { const h = hiddenForms(); h.add(id); setHiddenForms(h); }
   FORMS = FORMS.filter(f => f.id !== id);
@@ -735,17 +741,21 @@ async function loadForms() {
   try {
     // 양식 정의가 바뀌면 미리보기/PDF 렌더링도 즉시 같은 정의를 써야 한다.
     // 브라우저나 CDN의 이전 forms.json 응답을 재사용하지 않는다.
-    const res = await fetch('/api/forms?rev=20260808-style', { cache: 'no-store' });
+    const res = await fetch('/api/forms?rev=20261012-alltabs', { cache: 'no-store' });
     if (res.ok) { list = await res.json(); store.set('forms', JSON.stringify(list)); }
   } catch (e) { /* 오프라인 → 캐시 사용 */ }
   if (!list) { try { list = JSON.parse(store.get('forms')); } catch (e) { /* 무시 */ } }
   if (!list || !list.length) throw new Error('양식 정보를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.');
 
+  const builtInIds = new Set(list.map(f => f.id));
   const mine = (await idb.all()) || [];
-  for (const m of mine) { custom[m.id] = m; list = list.concat([m.def]); }
+  for (const m of mine) {
+    if (builtInIds.has(m.id)) continue;
+    custom[m.id] = m; list = list.concat([m.def]);
+  }
 
   const hidden = hiddenForms();
-  if (hidden.size) list = list.filter(f => !hidden.has(f.id));
+  if (hidden.size) list = list.filter(f => builtInIds.has(f.id) || !hidden.has(f.id));
   if (!list.length) list = (await idb.all() || []).map(m => m.def);   // 전부 숨겼으면 최소한 내가 올린 것만이라도
   if (!list.length) { setHiddenForms(new Set()); list = JSON.parse(store.get('forms') || '[]'); }  // 그마저 없으면 숨김 초기화
 
@@ -758,10 +768,11 @@ async function loadForms() {
 
 /** 양식이 요구하는 항목의 '기본값' 입력칸 (사진 추가 때 자동으로 채워진다) */
 function renderDefaults() {
-  $('defaults').innerHTML = FIELDS.map(f => `
+  const defaults = FIELDS.filter(f => f.key !== 'date');
+  $('defaults').innerHTML = defaults.map(f => `
     <div><label for="d_${esc(f.key)}">${esc(f.label)} (새 사진 기본값)</label>
       <input id="d_${esc(f.key)}" value="${esc(store.get('d:' + FORM.id + ':' + f.key) || '')}"></div>`).join('');
-  FIELDS.forEach(f => $('d_' + f.key).addEventListener('input', e =>
+  defaults.forEach(f => $('d_' + f.key).addEventListener('input', e =>
     store.set('d:' + FORM.id + ':' + f.key, e.target.value)));
 }
 
@@ -771,9 +782,15 @@ window.addEventListener('DOMContentLoaded', async () => {
   catch (e) { status('⚠️ ' + e.message); return; }
   const kst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   $('f_date').value = kst;
+  let appliedDate = kst;
   $('f_site').value = store.get('site') || '';
   ['f_site', 'f_date'].forEach(id => $(id).addEventListener('input', () => {
     if (id === 'f_site') store.set('site', $(id).value);
+    if (id === 'f_date') {
+      for (const it of items) if (!it.v.date || it.v.date === appliedDate) it.v.date = $('f_date').value;
+      appliedDate = $('f_date').value;
+      renderList();
+    }
     invalidate();
     schedule();
   }));

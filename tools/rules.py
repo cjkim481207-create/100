@@ -10,6 +10,7 @@ from PIL import Image
 
 pdf = sys.argv[1]
 want = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+want_y = float(sys.argv[3]) * 150 / 72 if len(sys.argv) > 3 else None
 
 tmp = tempfile.mkdtemp()
 subprocess.run(['pdftoppm', '-png', '-r', '150', '-f', '1', '-l', '1', pdf, tmp + '/p'],
@@ -33,7 +34,9 @@ if cur:
 def verticals(y0, y1):
     """구간 안에서 위아래로 이어진 세로 선의 x 좌표들"""
     sub = dark[y0:y1]
-    xs = np.where(sub.sum(axis=0) >= (y1 - y0) * 0.75)[0]
+    # Digits and Hangul strokes in a short caption can cover 75% of its height.
+    # A table rule must continue through almost the entire interval.
+    xs = np.where(sub.sum(axis=0) >= (y1 - y0) * 0.95)[0]
     out, cur = [], []
     for x in xs:
         if cur and x - cur[-1] > 2:
@@ -47,16 +50,24 @@ def verticals(y0, y1):
 
 # 가로선 사이가 표 한 줄만한 구간들 중에서 고른다 (사진칸처럼 높은 구간은 제외)
 best = None
+distance = float('inf')
 for a, b in zip(bands, bands[1:]):
     gap = b[0] - a[1]
     if not (12 <= gap <= 80):
         continue
-    v = verticals(a[1] + 4, b[0] - 4)
+    v = verticals(a[1] + 2, b[0] - 2)
     if len(v) < 3:
         continue
     if want and len(v) - 1 == want:
-        best = v
-        break
+        if want_y is None:
+            best = v
+            break
+        candidate_distance = abs((a[1] + b[0]) / 2 - want_y)
+        if candidate_distance < distance:
+            best, distance = v, candidate_distance
+        continue
+    if want_y is not None:
+        continue
     if best is None or len(v) > len(best):
         best = v
 

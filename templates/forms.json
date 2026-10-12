@@ -1813,6 +1813,7 @@
   },
   {
     "id": "jaejae",
+    "repeatHeader": true,
     "name": "자재 사진대지",
     "template": "jeongribi-photo.xlsx",
     "sheet": "자재 사진대지",
@@ -2353,6 +2354,7 @@
   },
   {
     "id": "jangbi",
+    "repeatHeader": true,
     "name": "현장정리비 업체 사진대지",
     "template": "jeongribi-photo2.xlsx",
     "sheet": "업체 사진대지",
@@ -3007,6 +3009,7 @@
   },
   {
     "id": "yongyeok",
+    "repeatHeader": true,
     "name": "용역 사진대지",
     "template": "yongyeok-photo.xlsx",
     "sheet": "용역 사진대지",
