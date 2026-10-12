@@ -21,12 +21,12 @@ module.exports = async (req, res) => {
     // ExcelJS 로 시트를 지우면 통합문서가 깨져서 엑셀이 파일을 아예 열지 못하고,
     // LibreOffice 는 그 깨진 파일을 너그럽게 열어 엉뚱하게 그린다. 숨긴 시트는
     // 엑셀도 LibreOffice 도 인쇄하지 않으므로 목적은 그대로 달성된다.
-    const form = body.formDef || forms().find(f => f.id === body.form) || forms()[0];
+    const form = forms().find(f => f.id === body.form) || body.formDef || forms()[0];
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(xlsxBuf);
     const keep = (form.sheet && wb.getWorksheet(form.sheet)) || wb.worksheets[0];
     for (const ws of wb.worksheets) ws.state = ws.id === keep.id ? 'visible' : 'hidden';
-    normalizeForLibreOffice(keep);
+    normalizeForLibreOffice(keep, form, (body.items || []).length);
     const trimmed = Buffer.from(await wb.xlsx.writeBuffer());
 
     const format = body.format === 'png' ? 'png' : 'pdf';

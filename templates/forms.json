@@ -11,6 +11,8 @@
     "blocksPerPage": 1,
     "firstPageBlocks": 1,
     "pxPerChar": 8,
+    "loColWidthFix": 1.195,
+    "loRowHeightFix": 1.034,
     "cols": [
       1.71,
       9.43,

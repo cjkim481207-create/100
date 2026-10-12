@@ -148,7 +148,7 @@ async function makeSample(def, templateB64, dir, name) {
   await wbL.xlsx.load(buf);
   const keepL = (def.sheet && wbL.getWorksheet(def.sheet)) || wbL.worksheets[0];
   for (const ws of wbL.worksheets) ws.state = ws.id === keepL.id ? 'visible' : 'hidden';
-  normalizeForLibreOffice(keepL);
+  normalizeForLibreOffice(keepL, def, items.length);
   const forLo = path.join(dir, name + '-lo.xlsx');
   fs.writeFileSync(forLo, Buffer.from(await wbL.xlsx.writeBuffer()));
 
