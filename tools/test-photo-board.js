@@ -11,6 +11,13 @@ async function main() {
     g.fillText = (text, ...args) => { texts.push(text); fillText(text, ...args); };
     const fields = { loc: '101동 지하1층', memo: '벽체 철근 배근 검측', date: '2026-11-17' };
     const bounds = PhotoBoard.draw(g, 0, 0, w, h, fields, '2000-01-01', '"Noto Sans KR"');
+    const pixels = g.getImageData(Math.round(bounds.x), Math.round(bounds.y), Math.floor(bounds.width), Math.floor(bounds.height)).data;
+    let white = 0, black = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i] > 245 && pixels[i+1] > 245 && pixels[i+2] > 245) white++;
+      if (pixels[i] < 80 && pixels[i+1] < 80 && pixels[i+2] < 80) black++;
+    }
+    assert.ok(white > pixels.length / 8 && black > 10, 'white board with black lines and text');
     assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= w && bounds.y + bounds.height <= h);
     assert.ok(bounds.x < w * 0.02 && bounds.y + bounds.height > h * 0.98, 'anchored at photo bottom left');
     for (const expected of ['현장명', '위치', '내용', '일자', fields.loc, fields.memo, '2026.11.17']) assert.ok(texts.includes(expected));
@@ -33,8 +40,8 @@ async function main() {
     assert.notDeepEqual(Buffer.from(photo), Buffer.from(item.data, 'base64'), 'Excel embeds the board, not the original image');
     const img = await loadImage(photo), check = createCanvas(img.width, img.height), ctx = check.getContext('2d');
     ctx.drawImage(img, 0, 0);
-    const [r, green, b] = ctx.getImageData(30, 720, 1, 1).data;
-    assert.ok(green > r * 1.5 && green > b, 'green board exists at the photo bottom left');
+    const [r, green, b] = ctx.getImageData(330, 730, 1, 1).data;
+    assert.ok(r > 240 && green > 240 && b > 240, 'white board exists at the photo bottom left');
   }
   console.log('✓ photo boards: four rows, exact fields, fixed site, photo bounds, long text, edits and Excel images in all four forms');
 }

@@ -4,6 +4,7 @@
   else root.PhotoBoard = factory();
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const SITE_NAME = '구리갈매A-2BL 아파트 건설공사';
+  const BOARD_SCALE = 0.5;
   const FONT = '"Malgun Gothic","맑은 고딕","Noto Sans KR",sans-serif';
 
   function values(fields, date) {
@@ -48,26 +49,28 @@
       if (bh <= height * 0.44) break;
       size *= 0.9;
     }
-    const bx = x + inset, by = y + height - inset - bh;
+    const bx = x + inset, by = y + height - inset - bh * BOARD_SCALE;
     g.beginPath(); g.rect(x, y, width, height); g.clip();
-    g.fillStyle = '#164b41'; g.fillRect(bx, by, bw, bh);
-    g.strokeStyle = '#f1f0db'; g.fillStyle = '#fffef0';
+    // Scale the entire board together, preserving wrapping and aspect ratio.
+    g.translate(bx, by); g.scale(BOARD_SCALE, BOARD_SCALE);
+    g.fillStyle = '#fff'; g.fillRect(0, 0, bw, bh);
+    g.strokeStyle = '#000'; g.fillStyle = '#000';
     g.lineWidth = Math.max(0.5, bw / 550);
-    g.strokeRect(bx, by, bw, bh);
-    g.beginPath(); g.moveTo(bx + labelW, by); g.lineTo(bx + labelW, by + bh); g.stroke();
+    g.strokeRect(0, 0, bw, bh);
+    g.beginPath(); g.moveTo(labelW, 0); g.lineTo(labelW, bh); g.stroke();
     g.textBaseline = 'middle';
-    let top = by;
+    let top = 0;
     for (let i = 0; i < layout.length; i++) {
       const row = layout[i];
-      if (i) { g.beginPath(); g.moveTo(bx, top); g.lineTo(bx + bw, top); g.stroke(); }
+      if (i) { g.beginPath(); g.moveTo(0, top); g.lineTo(bw, top); g.stroke(); }
       g.textAlign = 'center';
-      g.fillText(row.label, bx + labelW / 2, top + row.h / 2, labelW - pad);
+      g.fillText(row.label, labelW / 2, top + row.h / 2, labelW - pad);
       g.textAlign = 'left';
-      row.lines.forEach((line, n) => g.fillText(line, bx + labelW + pad, top + pad + size * 0.7 + n * size * 1.4));
+      row.lines.forEach((line, n) => g.fillText(line, labelW + pad, top + pad + size * 0.7 + n * size * 1.4));
       top += row.h;
     }
     g.restore();
-    return { x: bx, y: by, width: bw, height: bh };
+    return { x: bx, y: by, width: bw * BOARD_SCALE, height: bh * BOARD_SCALE };
   }
 
   return { SITE_NAME, values, draw };
