@@ -33,6 +33,7 @@ const context = vm.createContext({
   fetch: async () => ({ ok: true, json: async () => structuredClone(forms) }),
   fixtureForms: forms, fixtureCanvas: createCanvas(100, 150), fixtureText: textCalls, fixturePhotos: photoCalls,
 });
+vm.runInContext(fs.readFileSync(require.resolve('../public/photo-board.js'), 'utf8'), context);
 vm.runInContext(fs.readFileSync(require.resolve('../public/app.js'), 'utf8'), context);
 async function main() {
   vm.runInContext(`idb.all = async () => [{id: 'daeji2', def: {...fixtureForms[0], block: 999}, data: 'stale'}]; renderTabs = () => {}; renderList = () => {}; renderPreview = () => {};`, context);
@@ -52,11 +53,14 @@ async function main() {
   for (const form of forms) {
     context.selectedForm = form;
     vm.runInContext(`useForm(selectedForm); items.splice(0,items.length,...Array.from({length:7},()=>({bmp:fixtureCanvas,w:100,h:150,v:{memo:'검사',date:'2026-10-10'}})));`, context);
+    assert.ok(vm.runInContext('FIELDS.some(f => f.key === "loc")', context), `${form.id} has a location input for the board`);
     const pages = vm.runInContext('pageCount()', context);
     for (let p = 0; p < pages; p++) {
       textCalls.length = 0; photoCalls.length = 0; context.pageIndex = p;
       vm.runInContext(`drawPage(document.createElement('canvas'),pageIndex,96)`, context);
       assert.ok(textCalls.some(t => t.includes('검사 현장')), `${form.id} page ${p + 1} has site name`);
+      assert.ok(textCalls.includes('현장명') && textCalls.includes('위치') && textCalls.includes('내용') && textCalls.includes('일자'), 'all four board rows appear');
+      assert.ok(textCalls.includes('2026.10.10'), 'board uses each photo date');
       assert.equal(photoCalls.length, Math.min(form.id === 'yongyeok' ? 4 : 2, 7 - p * (form.id === 'yongyeok' ? 4 : 2)));
     }
     if (form.id === 'yongyeok') {

@@ -22,6 +22,8 @@ function fieldDefs(form) {
       }
     }
   }
+  // Every photo board needs a location, including forms without a location cell.
+  if (!seen.loc) out.unshift({ key: 'loc', label: '위치' });
   return out;
 }
 
@@ -170,6 +172,7 @@ function pageCount() {
 }
 
 function renderPreview() {
+  items.forEach((it, i) => thumb(document.querySelector(`[data-thumb="${i}"]`), it));
   const pages = pageCount();
   $('pvLabel').style.display = pages ? 'block' : 'none';
   const box = $('preview');
@@ -189,6 +192,7 @@ function thumb(cv, it) {
   g.fillStyle = '#d8dbe0'; g.fillRect(0, 0, S, S);
   const r = Math.min(S / it.w, S / it.h), w = it.w * r, h = it.h * r;
   g.drawImage(it.bmp, (S - w) / 2, (S - h) / 2, w, h);
+  PhotoBoard.draw(g, (S - w) / 2, (S - h) / 2, w, h, it.v, $('f_date').value);
 }
 
 function drawTemplateCells(g, cells, px, py, fs) {
@@ -312,6 +316,7 @@ function drawBlock(g, block, dateText, px, py, u, fs) {
       const r = Math.min((bw - pad * 2) / it.w, (bh - pad * 2) / it.h);
       const w = it.w * r, h = it.h * r;
       g.drawImage(it.bmp, bx + (bw - w) / 2, by + (bh - h) / 2, w, h);
+      PhotoBoard.draw(g, bx + (bw - w) / 2, by + (bh - h) / 2, w, h, it.v, $('f_date').value);
     }
 
     // 항목 표
@@ -783,7 +788,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   const kst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   $('f_date').value = kst;
   let appliedDate = kst;
-  $('f_site').value = store.get('site') || '';
+  $('f_site').value = store.get('site') || PhotoBoard.SITE_NAME;
   ['f_site', 'f_date'].forEach(id => $(id).addEventListener('input', () => {
     if (id === 'f_site') store.set('site', $(id).value);
     if (id === 'f_date') {
