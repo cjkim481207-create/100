@@ -19,7 +19,8 @@ async function main() {
     }
     assert.ok(white > pixels.length / 8 && black > 10, 'white board with black lines and text');
     assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= w && bounds.y + bounds.height <= h);
-    assert.ok(bounds.x < w * 0.02 && bounds.y + bounds.height > h * 0.98, 'anchored at photo bottom left');
+    assert.equal(bounds.x, 0, 'board is flush with the photo left edge');
+    assert.ok(Math.abs(bounds.y + bounds.height - h) < 1e-9, 'board is flush with the photo bottom edge');
     for (const expected of ['현장명', '위치', '내용', '일자', fields.loc, fields.memo, '2026.11.17']) assert.ok(texts.includes(expected));
     assert.ok(texts.join('').includes(PhotoBoard.SITE_NAME));
     const long = PhotoBoard.draw(g, 0, 0, w, h, { memo: '긴 내용과 줄바꿈\n'.repeat(30) });
@@ -32,7 +33,7 @@ async function main() {
   const changed = await boardImage({ ...item, fields: { ...item.fields, memo: '타설 완료' } }, '2026-11-18');
   assert.notDeepEqual(data, changed, 'editing fields changes the exported photograph');
   const image = await loadImage(data);
-  assert.equal(image.width, 1000); assert.equal(image.height, 750);
+  assert.equal(image.width, 2000); assert.equal(image.height, 1500);
   for (const form of forms()) {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(await buildXlsx({ form: form.id, date: '2026-11-17', items: [item] }));
@@ -40,7 +41,7 @@ async function main() {
     assert.notDeepEqual(Buffer.from(photo), Buffer.from(item.data, 'base64'), 'Excel embeds the board, not the original image');
     const img = await loadImage(photo), check = createCanvas(img.width, img.height), ctx = check.getContext('2d');
     ctx.drawImage(img, 0, 0);
-    const [r, green, b] = ctx.getImageData(330, 730, 1, 1).data;
+    const [r, green, b] = ctx.getImageData(700, 1460, 1, 1).data;
     assert.ok(r > 240 && green > 240 && b > 240, 'white board exists at the photo bottom left');
   }
   console.log('✓ photo boards: four rows, exact fields, fixed site, photo bounds, long text, edits and Excel images in all four forms');

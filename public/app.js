@@ -180,13 +180,13 @@ function renderPreview() {
   for (let p = 0; p < pages; p++) {
     const c = document.createElement('canvas');
     box.appendChild(c);
-    drawPage(c, p, 96);
+    drawPage(c, p, 192); // Render small board text at 2x resolution, then display at CSS size.
   }
 }
 
 function thumb(cv, it) {
   if (!cv) return;
-  const S = 96;
+  const S = 192;
   cv.width = S; cv.height = S;
   const g = cv.getContext('2d');
   g.fillStyle = '#d8dbe0'; g.fillRect(0, 0, S, S);
@@ -224,7 +224,7 @@ function drawTemplateCells(g, cells, px, py, fs) {
   g.fillStyle = '#000'; g.strokeStyle = '#000';
 }
 
-/** A4 한 장을 그린다 (엑셀 인쇄와 동일한 배치). dpi=96 미리보기, 200은 PDF용 */
+/** A4 한 장을 그린다 (엑셀 인쇄와 동일한 배치). 192dpi 미리보기, 300dpi PDF */
 function drawPage(cv, page, dpi) {
   const W = Math.round(8.2677 * dpi), H = Math.round(11.6929 * dpi);
   cv.width = W; cv.height = H;
@@ -381,8 +381,8 @@ async function buildPdfLocal() {
   const pages = pageCount(), jpegs = [];
   const cv = document.createElement('canvas');
   for (let p = 0; p < pages; p++) {
-    drawPage(cv, p, 200);              // 글씨가 또렷하게 나오도록 200dpi
-    jpegs.push(await canvasJpeg(cv, 0.92));
+    drawPage(cv, p, 300);
+    jpegs.push(await canvasJpeg(cv, 0.97));
   }
   return new Blob([pdfBytes(jpegs, 595.28, 841.89)], { type: 'application/pdf' });
 }
